@@ -21,7 +21,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
   return [
     // ───────────── VALUE (25) ─────────────
     {
-      id: "pe_vs_median", pillar: "value", label: "P/E vs its own 5-year median",
+      id: "pe_vs_median", pillar: "value", label: "P/E vs its own history (up to 5 years)",
       rule: "0 pts at 1.4× its median, full at 0.7×",
       run: () => {
         const pe = currentPE(c, m);
@@ -33,8 +33,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
         return {
           score: scale(ratio, 1.4, 0.7),
           display: `${fx(pe)}× vs ${fx(med)}× median`,
-          expert: `Trailing P/E ${fx(pe)}× against a 5-year median of ${fx(med)}× (${fx(ratio, 2)}× its norm). Below 1.0× means the market is paying less than usual for each dollar of earnings.`,
-          simple: `P/E is how many years of today's profit you pay for when you buy the stock. ${name} costs about ${fx(pe, 0)} years of profit right now; over the last five years it usually cost ${fx(med, 0)}. ${ratio < 0.95 ? "So it's cheaper than normal for this company." : ratio > 1.05 ? "So it's pricier than normal for this company." : "That's about its usual price."}`,
+          expert: `Trailing P/E ${fx(pe)}× against a median of ${fx(med)}× from ${hist.length} annual observations (${fx(ratio, 2)}× its norm). Below 1.0× means the market is paying less than usual for each dollar of earnings.`,
+          simple: `P/E is how many years of today's profit you pay for when you buy the stock. ${name} costs about ${fx(pe, 0)} years of profit right now; across ${hist.length} available fiscal years it usually cost ${fx(med, 0)}. ${ratio < 0.95 ? "So it's cheaper than normal for this company." : ratio > 1.05 ? "So it's pricier than normal for this company." : "That's about its usual price."}`,
         };
       },
     },
@@ -98,14 +98,14 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
 
     // ───────────── GROWTH (25) ─────────────
     {
-      id: "rev_cagr_5", pillar: "growth", label: "Revenue growth, 5 years",
+      id: "rev_cagr_5", pillar: "growth", label: "Revenue growth (up to 5 years)",
       rule: "0 pts at 0%/yr, full at 15%/yr",
       run: () => {
         const g = cagrOver(series(m.annual, (r) => r.revenue), 5);
-        if (!g || g.span < 4) return skip("Fewer than 5 years of revenue");
+        if (!g || g.span < 3) return skip("Fewer than 3 years between revenue observations");
         return {
           score: scale(g.g, 0, 0.15),
-          display: `${signedPct(g.g, 1)}/yr`,
+          display: `${signedPct(g.g, 1)}/yr (${g.span}y)`,
           expert: `Revenue compounded at ${signedPct(g.g, 1)} a year over ${g.span} fiscal years.`,
           simple: `Over the last ${g.span} years, ${name}'s sales grew about ${pct(g.g, 0)} a year on average. ${g.g >= 0.1 ? "That's fast." : g.g >= 0.04 ? "That's steady." : "That's slow or shrinking."}`,
         };
@@ -294,7 +294,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
     },
     {
       id: "fcf_history", pillar: "health", label: "Free-cash-flow history",
-      rule: "Share of the last 10 years with positive strict FCF: 0 pts at 40%, full at 100%",
+      rule: "Share of up to 10 available fiscal years with positive strict FCF: 0 pts at 40%, full at 100%",
       run: () => {
         const vals = m.annual.slice(-10).map(strictFcf).filter(isNum);
         if (vals.length < 4) return skip("Fewer than 4 years of cash flow");

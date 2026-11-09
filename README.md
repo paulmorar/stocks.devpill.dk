@@ -24,7 +24,7 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # 57 unit tests: scoring, trend, splits, merging, snapshots, day-trading signals, auth
+npm test          # scoring, trend, splits, merging, snapshots, day-trading signals, auth
 npm run typecheck
 npm run build
 ```
@@ -97,6 +97,25 @@ The report shows the gap for each stock and each pillar, the overall bias and me
 | **Financial Modeling Prep** (optional) | longer statement history for the 10-year checks; fills gaps | Set `FMP_API_KEY`. Free plans may cap history at 5 years; the adapter retries with `limit=5`. |
 
 Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fills gaps and adds older years. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
+
+### Scoring with Yahoo-only history
+
+Stocks with at least **four annual periods** can be ranked without an FMP key.
+Four-period scores carry a **Limited history** badge and a provisional-score explanation
+on stock pages, cards, and ranking tables. Funds, ETFs, REITs, and stocks with fewer
+than four annual periods remain excluded; S&P 500 membership does not bypass those rules.
+
+The 25/25/30/20 pillar weights and 59/39 red-flag caps are unchanged. Revenue growth
+uses the actual elapsed span (four consecutive reports give a three-year CAGR).
+P/E comparisons state how many annual observations are available. Longer-history
+checks remain skipped when their data requirements are not met; missing years are
+never invented. The existing per-pillar re-weighting still applies, so shorter-history
+scores should not be treated as equally well-supported as longer-history scores.
+
+After deploying this scoring change, run **Weekly scan** on `main` with the symbols
+input empty to rebuild the complete snapshot, then confirm Vercel deploys its commit.
+Existing snapshots keep their original eligibility flags until regenerated. The scan
+log separates ranked, limited-history, excluded, and failed companies.
 
 ## How the score maps to the TTT methodology
 

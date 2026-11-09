@@ -1,7 +1,7 @@
 /** Plain-language glossary used by tooltips and the Learn page. */
 export const GLOSSARY: Record<string, { term: string; simple: string; expert: string }> = {
   stock: { term: "Stock / share", simple: "A tiny slice of ownership in a company. If the company does well, your slice is usually worth more.", expert: "Equity claim on residual earnings and assets." },
-  pe: { term: "P/E (price-to-earnings)", simple: "How many years of today's profit you're paying for. A P/E of 20 means the price equals 20 years of current profit.", expert: "Price ÷ trailing diluted EPS. Compared here to the company's own 5-year median." },
+  pe: { term: "P/E (price-to-earnings)", simple: "How many years of today's profit you're paying for. A P/E of 20 means the price equals 20 years of current profit.", expert: "Price ÷ trailing diluted EPS. Compared here to the company's own median over up to 5 available fiscal years." },
   peg: { term: "PEG", simple: "P/E adjusted for growth. Around 1 is a fair price for the growth you get; above 2 is pricey.", expert: "Forward P/E ÷ expected EPS growth (in %)." },
   eps: { term: "EPS (earnings per share)", simple: "The company's profit divided by the number of shares — your share of the profit.", expert: "Diluted net income attributable to common ÷ diluted shares." },
   fcf: { term: "Free cash flow", simple: "Cash left over after paying all the bills and investing in the business. It's what could be paid to owners.", expert: "Operating cash flow − capital expenditure." },

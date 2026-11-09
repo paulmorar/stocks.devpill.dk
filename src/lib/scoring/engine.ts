@@ -4,7 +4,7 @@ import { runCheck } from "./check";
 import { mainChecks } from "./checks-main";
 import { financialChecks, tbvps } from "./checks-financials";
 import { buildMetrics, type Metrics, strictFcf } from "./metrics";
-import { bandOf, type PillarId, type PillarResult, type RedFlag, type ScoreResult } from "./types";
+import { bandOf, hasLimitedHistory, MIN_HISTORY_YEARS, type PillarId, type PillarResult, type RedFlag, type ScoreResult } from "./types";
 
 export const PILLARS: Record<PillarId, { label: string; max: number; question: string; simpleQuestion: string }> = {
   value: { label: "Value", max: 25, question: "Is the price reasonable for what you get?", simpleQuestion: "Is it a fair price?" },
@@ -31,7 +31,7 @@ export function notScoredReason(c: CompanyData): string | undefined {
   const qt = (c.profile.quoteType ?? "EQUITY").toUpperCase();
   if (qt === "ETF" || qt === "MUTUALFUND") return "ETFs and funds aren't scored — they hold many companies.";
   if (/reit/i.test(c.profile.industry ?? "")) return "REITs aren't scored — their accounting (depreciation on property) distorts these checks.";
-  if (c.annual.length < 5) return `Only ${c.annual.length} years of history; at least 5 are needed.`;
+  if (c.annual.length < MIN_HISTORY_YEARS) return `Only ${c.annual.length} years of history; at least ${MIN_HISTORY_YEARS} are needed.`;
   return undefined;
 }
 
@@ -100,6 +100,9 @@ export function scoreCompany(c: CompanyData): ScoreResult {
   const financial = isFinancial(c);
   const reason = notScoredReason(c);
   const notes: string[] = [];
+  if (!reason && hasLimitedHistory(m.annual.length)) {
+    notes.push(`Limited history: ${m.annual.length} annual periods. Treat this score as provisional; unavailable long-term checks are skipped and their pillar is re-weighted.`);
+  }
   if (m.capexMode && financial) notes.push("CAPEX: spending is more than 2× depreciation. The financials scorecard doesn't use cash-flow checks, so this is informational.");
   if (m.capexMode && !financial) notes.push("CAPEX mode: spending is more than 2× depreciation, so cash conversion and the cash-flow trend only subtract maintenance spending.");
   if (financial) notes.push("Scored on the financials scorecard (book value and return on equity).");

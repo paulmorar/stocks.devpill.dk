@@ -16,6 +16,7 @@ import universe from "../src/data/universe.json" with { type: "json" };
 import { analyzeLongTerm } from "../src/lib/analyze";
 import { getCloses } from "../src/lib/data";
 import { industryMomentum, rank, type RadarRow, type Snapshot, toRow, withDeltas } from "../src/lib/snapshot";
+import { hasLimitedHistory } from "../src/lib/scoring/types";
 
 const DIR = path.join(process.cwd(), "src/data/snapshots");
 const KEEP = 26;
@@ -124,8 +125,10 @@ async function main() {
   const all = (await readdir(DIR)).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
   for (const f of all.slice(0, Math.max(0, all.length - KEEP))) await unlink(path.join(DIR, f));
 
-  const radar = snapshot.rows.filter((r) => r.scorable && r.score >= 80);
-  console.log(`\nDone: ${snapshot.rows.length} scored, ${failed.length} failed, ${radar.length} on the radar (80+).`);
+  const ranked = rank(snapshot.rows);
+  const limited = ranked.filter((r) => hasLimitedHistory(r.yearsOfHistory));
+  const radar = ranked.filter((r) => r.score >= 80);
+  console.log(`\nDone: ${ranked.length} ranked (${limited.length} limited-history), ${snapshot.rows.length - ranked.length} excluded, ${failed.length} failed, ${radar.length} on the radar (80+).`);
   for (const [i, r] of radar.entries()) {
     const d = r.delta === null || r.delta === undefined ? "new" : r.delta === 0 ? "–" : `${r.delta > 0 ? "▲" : "▼"}${Math.abs(r.delta)}`;
     console.log(`${String(i + 1).padStart(3)} ${r.symbol.padEnd(6)} ${r.score} ${d.padEnd(4)} V${r.pillars.value} G${r.pillars.growth} Q${r.pillars.quality} H${r.pillars.health} ${r.trend ?? ""}`);

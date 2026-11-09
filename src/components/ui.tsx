@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { GLOSSARY } from "@/lib/glossary";
 import type { LongTermReport } from "@/lib/analyze";
-import type { Band, PillarResult } from "@/lib/scoring/types";
+import { hasLimitedHistory, type Band, type PillarResult } from "@/lib/scoring/types";
 import { TREND_ICON, type TrendResult } from "@/lib/trend";
 import { signedPct } from "@/lib/util";
 import { useMode } from "./mode";
@@ -99,11 +99,21 @@ export function TrendBadge({ t, compact = false }: { t?: TrendResult; compact?: 
   );
 }
 
+export function HistoryBadge({ years }: { years?: number }) {
+  if (!hasLimitedHistory(years)) return null;
+  return (
+    <span className="chip" title="Provisional score from limited annual history. Missing long-term checks are skipped, not estimated.">
+      Limited history: {years}y
+    </span>
+  );
+}
+
 export function Chips({ r }: { r: LongTermReport }) {
   return (
     <div className="row" style={{ gap: 4 }}>
       {r.score.scorecard === "financials" && <span className="chip f" title="Scored on the financials scorecard">F</span>}
       {r.score.capexMode && <span className="chip capex" title="Spending more than 2× depreciation">CAPEX</span>}
+      {r.score.scorable && <HistoryBadge years={r.score.yearsOfHistory} />}
       {r.score.redFlags.length > 0 && (
         <span className="chip flag" title={r.score.redFlags.map((f) => f.label).join("\n")}>
           ⚑ {r.score.redFlags.length}

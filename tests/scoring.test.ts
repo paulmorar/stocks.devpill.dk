@@ -74,16 +74,93 @@ describe("scoreCompany on demo companies", () => {
     expect(live[0]!.maxPoints).toBeCloseTo(12.5);
   });
 
-  it("companies with under 5 years of history, ETFs and REITs aren't scored", () => {
+  it.each([0, 1, 2, 3])("does not score %i annual periods, even with TTM available", (years) => {
     const short = demo("NWSW");
-    short.annual = short.annual.slice(-4);
-    expect(notScoredReason(short)).toMatch(/5 are needed/);
+    short.annual = years ? short.annual.slice(-years) : [];
+    expect(short.ttm).toBeDefined();
+    expect(notScoredReason(short)).toMatch(/at least 4 are needed/);
+    expect(scoreCompany(short).scorable).toBe(false);
+  });
+
+  it.each(["ETF", "MUTUALFUND"])("does not score %s with four annual periods", (quoteType) => {
     const etf = demo("NWSW");
-    etf.profile.quoteType = "ETF";
+    etf.annual = etf.annual.slice(-4);
+    etf.profile.quoteType = quoteType;
     expect(notScoredReason(etf)).toMatch(/ETF/);
+    expect(scoreCompany(etf).scorable).toBe(false);
+  });
+
+  it("does not score REITs with four annual periods", () => {
     const reit = demo("NWSW");
+    reit.annual = reit.annual.slice(-4);
     reit.profile.industry = "REIT - Industrial";
     expect(scoreCompany(reit).scorable).toBe(false);
+  });
+
+  it.each(["NWSW", "CTSB"])("scores four-period %s histories with the actual three-year revenue CAGR", (symbol) => {
+    const company = demo(symbol);
+    company.annual = company.annual.slice(-4);
+    const result = scoreCompany(company);
+    expect(result.scorable).toBe(true);
+    expect(result.notScoredReason).toBeUndefined();
+    expect(result.yearsOfHistory).toBe(4);
+    expect(result.notes.join(" ")).toMatch(/Limited history.*provisional/);
+    expect(summarize(symbol, result).expert).toMatch(/Limited history.*provisional/);
+    expect(summarize(symbol, result).simple).toMatch(/Limited history.*provisional/);
+    expect(result.total).toBeGreaterThanOrEqual(0);
+    expect(result.total).toBeLessThanOrEqual(100);
+
+    const checks = result.pillars.flatMap((pillar) => pillar.checks);
+    const revenue = checks.find((check) => check.id === "rev_cagr_5")!;
+    const cagr = (company.annual.at(-1)!.revenue! / company.annual[0]!.revenue!) ** (1 / 3) - 1;
+    const fullCredit = symbol === "CTSB" ? 0.12 : 0.15;
+    expect(revenue.score).toBeCloseTo(Math.min(1, Math.max(0, cagr / fullCredit)));
+    expect(revenue.display).toContain("(3y)");
+    expect(revenue.explain.expert).toMatch(/over 3 (fiscal )?years/);
+
+    const pe = checks.find((check) => check.id === "pe_vs_median")!;
+    expect(pe.explain.expert).toContain("4 annual observations");
+    expect(pe.explain.simple).toContain("4 available fiscal years");
+    for (const pillar of result.pillars) {
+      expect(pillar.checks.reduce((sum, check) => sum + check.maxPoints, 0)).toBeCloseTo(pillar.maxPoints);
+    }
+  });
+
+  it("does not invent long-term revenue history for a four-period company", () => {
+    const company = demo("NWSW");
+    company.annual = company.annual.slice(-4);
+    const result = scoreCompany(company);
+    const longRun = result.pillars.flatMap((pillar) => pillar.checks).find((check) => check.id === "rev_cagr_10")!;
+    expect(longRun.score).toBeUndefined();
+    expect(longRun.points).toBe(0);
+    expect(longRun.skippedReason).toContain("Fewer than 8 years");
+  });
+
+  it.each(["NWSW", "CTSB"])("still skips revenue growth when %s has less than three elapsed years of revenue", (symbol) => {
+    const company = demo(symbol);
+    company.annual = company.annual.slice(-4);
+    company.annual[0]!.revenue = undefined;
+    const check = scoreCompany(company).pillars.flatMap((pillar) => pillar.checks).find((entry) => entry.id === "rev_cagr_5")!;
+    expect(check.score).toBeUndefined();
+    expect(check.skippedReason).toContain("Fewer than 3 years");
+  });
+
+  it("does not mark five-period scores as limited-history", () => {
+    const company = demo("NWSW");
+    company.annual = company.annual.slice(-5);
+    const result = scoreCompany(company);
+    expect(result.scorable).toBe(true);
+    expect(result.notes.join(" ")).not.toContain("Limited history");
+    expect(summarize(company.profile.name, result).simple).not.toContain("provisional");
+  });
+
+  it.each([["FBCL", 59], ["TSRT", 39]] as const)("preserves the red-flag cap for four-period %s histories", (symbol, cap) => {
+    const company = demo(symbol);
+    company.annual = company.annual.slice(-4);
+    const result = scoreCompany(company);
+    expect(result.scorable).toBe(true);
+    expect(result.redFlags.length).toBeGreaterThanOrEqual(cap === 59 ? 1 : 2);
+    expect(result.total).toBeLessThanOrEqual(cap);
   });
 
   it("every check carries both an expert and a beginner explanation", () => {

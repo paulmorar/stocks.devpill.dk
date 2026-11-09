@@ -203,7 +203,9 @@ export default function Home() {
         {snapshotTab && snapErr && <p className="band-red small">Couldn&apos;t load the weekly list: {snapErr}</p>}
         {snapshotTab && snap && !hasSnapshot && (
           <div className="banner info small">
-            <b>The first weekly scan hasn&apos;t run yet.</b> It scores all ~515 S&amp;P 500 and Nasdaq-100 companies, which takes a while, so it runs
+            <b>{snap.rows.length ? "No imported companies qualify for ranking." : "No weekly ranking data is available yet."}</b>{" "}
+            {snap.rows.length > 0 && <>Scoring needs at least four annual periods; funds and REITs are excluded. </>}
+            The weekly scan checks all ~515 S&amp;P 500 and Nasdaq-100 companies, which takes a while, so it runs
             on a schedule instead of on page load. Trigger <i>Weekly scan</i> in the repo&apos;s GitHub Actions tab (runs every Sunday after that), or run{" "}
             <code>npm run scan</code> locally and commit <code>src/data/snapshots</code>. Meanwhile, use <i>My portfolio</i>, <i>Watchlist</i> or{" "}
             <i>Discover</i>, which score live.

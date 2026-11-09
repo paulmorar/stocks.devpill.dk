@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import type { RadarRow } from "@/lib/snapshot";
-import type { PillarId } from "@/lib/scoring/types";
+import { hasLimitedHistory, type PillarId } from "@/lib/scoring/types";
 import { TREND_ICON, type TrendState } from "@/lib/trend";
 import { signedPct } from "@/lib/util";
 import { useMode } from "./mode";
-import { Term } from "./ui";
+import { HistoryBadge, Term } from "./ui";
 
 /** Ranked list in the layout of TTT's weekly "On the Radar" / "Portfolio Holdings Scores" posts. */
 
@@ -71,6 +71,7 @@ export function RankTable({ rows, startRank = 1, showDelta = true }: { rows: Rad
                 ) : (
                   <span className="tiny muted">not scored</span>
                 )}
+                {r.scorable && <HistoryBadge years={r.yearsOfHistory} />}
                 {r.scorable && (
                   <div className="mobile-pillars tiny muted num">
                     V {r.pillars.value} · G {r.pillars.growth}
@@ -115,6 +116,9 @@ export function RankTable({ rows, startRank = 1, showDelta = true }: { rows: Rad
         <span><span className="band-red">⚑</span> red flag caps score</span>
         <span><span className="chip f-outline">F</span> financials scorecard</span>
         <span><span className="chip capex-outline">CAPEX</span> spending &gt;2× depreciation</span>
+        {rows.some((r) => r.scorable && hasLimitedHistory(r.yearsOfHistory)) && (
+          <span>Limited history = provisional score from four annual periods</span>
+        )}
       </div>
       <p className="tiny faint" style={{ marginTop: 6 }}>
         {mode === "expert" ? (

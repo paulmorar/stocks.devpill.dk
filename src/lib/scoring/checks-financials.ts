@@ -42,7 +42,7 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
   return [
     // VALUE
     {
-      id: "pe_vs_median", pillar: "value", label: "P/E vs its own 5-year median",
+      id: "pe_vs_median", pillar: "value", label: "P/E vs its own history (up to 5 years)",
       rule: "0 pts at 1.4× its median, full at 0.7×",
       run: () => {
         const pe = currentPE(c, m);
@@ -54,8 +54,8 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
         return {
           score: scale(ratio, 1.4, 0.7),
           display: `${fx(pe)}× vs ${fx(med)}× median`,
-          expert: `Trailing P/E ${fx(pe)}× vs a 5-year median of ${fx(med)}×.`,
-          simple: `You pay about ${fx(pe, 0)} years of profit for ${name}; it's usually ${fx(med, 0)}. ${ratio < 0.95 ? "Cheaper than normal." : ratio > 1.05 ? "Pricier than normal." : "About normal."}`,
+          expert: `Trailing P/E ${fx(pe)}× vs a median of ${fx(med)}× from ${hist.length} annual observations.`,
+          simple: `You pay about ${fx(pe, 0)} years of profit for ${name}; across ${hist.length} available fiscal years it's usually ${fx(med, 0)}. ${ratio < 0.95 ? "Cheaper than normal." : ratio > 1.05 ? "Pricier than normal." : "About normal."}`,
         };
       },
     },
@@ -113,13 +113,13 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
       },
     },
     {
-      id: "rev_cagr_5", pillar: "growth", label: "Revenue growth, 5 years",
+      id: "rev_cagr_5", pillar: "growth", label: "Revenue growth (up to 5 years)",
       rule: "0 pts at 0%/yr, full at 12%/yr",
       run: () => {
         const g = cagrOver(series(m.annual, (r) => r.revenue), 5);
-        if (!g || g.span < 4) return skip("Fewer than 5 years of revenue");
+        if (!g || g.span < 3) return skip("Fewer than 3 years between revenue observations");
         return {
-          score: scale(g.g, 0, 0.12), display: `${signedPct(g.g, 1)}/yr`,
+          score: scale(g.g, 0, 0.12), display: `${signedPct(g.g, 1)}/yr (${g.span}y)`,
           expert: `Revenue CAGR ${signedPct(g.g, 1)} over ${g.span} years.`,
           simple: `${name}'s revenue grew about ${pct(g.g, 0)} a year over ${g.span} years.`,
         };
@@ -229,7 +229,7 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
     },
     {
       id: "profitable_years", pillar: "health", label: "Profitable years",
-      rule: "Share of the last 10 years with a profit: 0 at 50%, full at 100%",
+      rule: "Share of up to 10 available fiscal years with a profit: 0 at 50%, full at 100%",
       run: () => {
         const vals = m.annual.slice(-10).map((r) => r.netIncome).filter(isNum);
         if (vals.length < 4) return skip("Fewer than 4 years");

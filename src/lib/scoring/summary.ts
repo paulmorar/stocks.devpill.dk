@@ -1,5 +1,5 @@
 import type { TrendResult } from "../trend";
-import type { Explain, ScoreResult } from "./types";
+import { hasLimitedHistory, type Explain, type ScoreResult } from "./types";
 
 const BAND_WORD = { lime: "excellent", green: "good", amber: "middling", red: "weak" } as const;
 
@@ -29,8 +29,11 @@ export function summarize(name: string, s: ScoreResult, t?: TrendResult): Explai
   const trendTextS = t
     ? ` ${t.state === "Uptrend" ? "The stock price has been rising." : t.state === "Downtrend" ? "The stock price has been falling." : t.state === "Recovering" ? "The stock price is bouncing back after a slump." : t.state === "Weakening" ? "The stock price has started to slip." : "The stock price has no clear direction."}`
     : "";
+  const historyText = hasLimitedHistory(s.yearsOfHistory)
+    ? ` Limited history: only ${s.yearsOfHistory} annual periods are available, so this score is provisional.`
+    : "";
 
   const expert = `${s.total}/100 (${s.band}). Strongest pillar: ${best?.label} (${Math.round((best?.r ?? 0) * 100)}%); weakest: ${worst?.label} (${Math.round((worst?.r ?? 0) * 100)}%).${flagText}${trendTextE}`;
   const simple = `${name} scores ${s.total} out of 100 — ${BAND_WORD[s.band]}. In short: ${best ? STRENGTH[best.id] : ""}${worst && worst.id !== best?.id && worst.r < 0.6 ? `, but ${WEAKNESS[worst.id]}` : ""}.${s.redFlags.length ? ` There ${s.redFlags.length === 1 ? "is a serious warning sign" : "are serious warning signs"}, so the score is held down no matter how cheap it looks.` : ""}${trendTextS}`;
-  return { expert, simple };
+  return { expert: expert + historyText, simple: simple + historyText };
 }

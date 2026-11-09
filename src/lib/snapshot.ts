@@ -15,6 +15,8 @@ export interface RadarRow {
   sector?: string;
   industry?: string;
   scorable: boolean;
+  /** Absent in snapshots generated before limited-history scoring. */
+  yearsOfHistory?: number;
   score: number;
   raw: number;
   band: Band;
@@ -59,6 +61,7 @@ export function toRow(r: LongTermReport, index?: string[]): RadarRow {
     sector: r.profile.sector,
     industry: r.profile.industry,
     scorable: r.score.scorable,
+    yearsOfHistory: r.score.yearsOfHistory,
     score: r.score.total,
     raw: r.score.raw,
     band: r.score.band,

@@ -40,6 +40,9 @@ export interface RedFlag {
 
 export type Band = "lime" | "green" | "amber" | "red";
 
+export const MIN_HISTORY_YEARS = 4;
+export const hasLimitedHistory = (yearsOfHistory?: number) => yearsOfHistory === MIN_HISTORY_YEARS;
+
 export interface ScoreResult {
   symbol: string;
   scorable: boolean;

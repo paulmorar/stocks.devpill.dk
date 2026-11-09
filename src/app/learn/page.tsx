@@ -8,12 +8,12 @@ const PILLARS = [
   {
     name: "Value", pts: 25,
     simple: "Is the price fair? We compare today's price with what this same company usually costs, how fast it's expected to grow, and how much spare cash it makes for the price.",
-    expert: "P/E vs own 5-year median · PEG · forward vs trailing EPS · FCF yield.",
+    expert: "P/E vs own median over up to 5 available fiscal years · PEG · forward vs trailing EPS · FCF yield.",
   },
   {
     name: "Growth", pts: 25,
-    simple: "Is the business getting bigger? Sales over 5 and 10 years, and whether profit and cash keep rising year after year.",
-    expert: "Revenue CAGR 5y & 10y · net income trend · cash-flow trend (frequency of increases + CAGR), TTM included.",
+    simple: "Is the business getting bigger? Sales growth over the available history, up to 5 and 10 years, and whether profit and cash keep rising year after year.",
+    expert: "Revenue CAGR over 3–5 years plus a separate long-run check when sufficient history exists · net income trend · cash-flow trend (frequency of increases + CAGR), TTM included.",
   },
   {
     name: "Quality", pts: 30,
@@ -44,8 +44,12 @@ export default function Learn() {
         <h2>The score: 0 to 100</h2>
         <p className="muted small">
           {mode === "expert"
-            ? "Four pillars, each check scored on a sliding scale (no pass/fail cliffs). Valuation is compared with the company's own history, not the market. Missing data skips a check and re-weights its pillar. ETFs, REITs and companies with under 5 years of history aren't scored."
+            ? "Four pillars, each check scored on a sliding scale (no pass/fail cliffs). Valuation is compared with the company's own history, not the market. Missing data skips a check and re-weights its pillar. ETFs, funds, REITs and companies with under 4 annual periods aren't scored."
             : "Four questions, each worth a share of the points. Every check gives partial credit — not just pass or fail. If a number is missing, that check is skipped rather than counted as a zero."}
+        </p>
+        <p className="small muted">
+          Four annual periods are enough for a provisional score, marked <b>Limited history</b>. Four consecutive reports provide three years of growth,
+          not four. Missing long-term checks stay skipped; we do not invent older data. S&amp;P 500 membership gives no extra points.
         </p>
         {PILLARS.map((p) => (
           <div key={p.name} className="check">
