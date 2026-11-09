@@ -102,8 +102,8 @@ export function TrendBadge({ t, compact = false }: { t?: TrendResult; compact?: 
 export function HistoryBadge({ years }: { years?: number }) {
   if (!hasLimitedHistory(years)) return null;
   return (
-    <span className="chip" title="Provisional score from limited annual history. Missing long-term checks are skipped, not estimated.">
-      Limited history: {years}y
+    <span className="chip" title="We have only four annual reports. This provisional score is an early estimate. We skip checks that need more history.">
+      Limited history: {years} years
     </span>
   );
 }
@@ -217,7 +217,8 @@ export function LineChart({
 export function Disclaimer() {
   return (
     <p className="tiny faint">
-      Educational tool, not investment advice. Scores are a starting point for your own research — not buy or sell signals, not risk ratings, not forecasts.
+      This is an educational tool, not investment advice. A score can help you choose what to research.
+      It is not a buy or sell signal, a risk rating, or a forecast.
     </p>
   );
 }

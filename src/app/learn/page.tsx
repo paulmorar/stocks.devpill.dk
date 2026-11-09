@@ -7,22 +7,22 @@ import { Disclaimer } from "@/components/ui";
 const PILLARS = [
   {
     name: "Value", pts: 25,
-    simple: "Is the price fair? We compare today's price with what this same company usually costs, how fast it's expected to grow, and how much spare cash it makes for the price.",
+    simple: "Is the price fair? We compare it with the company's past valuations. We also look at expected growth and how much cash the business generates for the price you pay.",
     expert: "P/E vs own median over up to 5 available fiscal years · PEG · forward vs trailing EPS · FCF yield.",
   },
   {
     name: "Growth", pts: 25,
-    simple: "Is the business getting bigger? Sales growth over the available history, up to 5 and 10 years, and whether profit and cash keep rising year after year.",
-    expert: "Revenue CAGR over 3–5 years plus a separate long-run check when sufficient history exists · net income trend · cash-flow trend (frequency of increases + CAGR), TTM included.",
+    simple: "Is the business growing? We look at sales growth over the history we have, up to 5 and 10 years. We also check whether profit and cash flow have risen consistently.",
+    expert: "Revenue CAGR over 3 to 5 years, plus a separate long-run check when enough history exists. Net income and cash-flow trends combine the frequency of increases with CAGR and include TTM data.",
   },
   {
     name: "Quality", pts: 30,
-    simple: "Is it a really good business? Does it earn a lot on the money invested, keep its profit margins steady, and turn its profit into real cash — year after year?",
+    simple: "Does the business earn strong returns on the money invested? We check how steady its profit margins are and how much of its reported profit turns into cash.",
     expert: "ROIC · operating-margin stability (σ and slope) · cash conversion · ROIC durability.",
   },
   {
     name: "Financial Health", pts: 20,
-    simple: "Is it safe? Not too much debt, can easily pay interest, doesn't keep printing new shares, and reliably has cash left over.",
+    simple: "Can the company meet its financial commitments? We check debt, interest payments, new share issues, and whether the business regularly has cash left over.",
     expert: "Debt/equity (or net debt/EBITDA when buybacks shrink equity) · share-count CAGR · interest coverage · years of positive FCF.",
   },
 ];
@@ -34,9 +34,8 @@ export default function Learn() {
       <h1>{mode === "expert" ? "Methodology" : "How this works, in plain English"}</h1>
       <Only mode="beginner">
         <p className="muted">
-          Buying a stock means buying a small piece of a company. This app helps with two different questions:{" "}
-          <b>&ldquo;Is this a good company to own for years?&rdquo;</b> (the Long-term tab) and{" "}
-          <b>&ldquo;Is something interesting happening to this stock today?&rdquo;</b> (the Day-trading tab). They&apos;re very different games.
+          Buying a stock means owning a small part of a company. The Long-term tab helps you research the business.
+          The Day-trading tab looks for unusual price and trading activity today. A company can suit one approach without suiting the other.
         </p>
       </Only>
 
@@ -44,12 +43,13 @@ export default function Learn() {
         <h2>The score: 0 to 100</h2>
         <p className="muted small">
           {mode === "expert"
-            ? "Four pillars, each check scored on a sliding scale (no pass/fail cliffs). Valuation is compared with the company's own history, not the market. Missing data skips a check and re-weights its pillar. ETFs, funds, REITs and companies with under 4 annual periods aren't scored."
-            : "Four questions, each worth a share of the points. Every check gives partial credit — not just pass or fail. If a number is missing, that check is skipped rather than counted as a zero."}
+            ? "The score has four pillars. Checks award partial credit on a sliding scale, and valuation uses the company's own history rather than a market benchmark. If data is missing, we skip the check and share its points across the remaining checks in that pillar. We exclude ETFs, funds, REITs, and companies with fewer than four annual reports."
+            : "The score covers four areas, each worth a share of the points. A check can earn some points without earning all of them. When data is missing, we skip that check rather than give it zero. Its points go to the remaining checks in the same area."}
         </p>
         <p className="small muted">
-          Four annual periods are enough for a provisional score, marked <b>Limited history</b>. Four consecutive reports provide three years of growth,
-          not four. Missing long-term checks stay skipped; we do not invent older data. S&amp;P 500 membership gives no extra points.
+          With only four annual reports, we mark the score <b>Limited history</b>. Treat it as an early estimate.
+          Four consecutive reports let us measure three years of growth. We skip checks that need older data instead of filling in missing years.
+          Stocks in the S&amp;P 500 receive no extra points.
         </p>
         {PILLARS.map((p) => (
           <div key={p.name} className="check">
@@ -62,8 +62,8 @@ export default function Learn() {
         ))}
         <div className="row small" style={{ marginTop: 10, gap: 14 }}>
           <span><b className="band-lime">80+</b> excellent</span>
-          <span><b className="band-green">65–79</b> good</span>
-          <span><b className="band-amber">50–64</b> middling</span>
+          <span><b className="band-green">65 to 79</b> good</span>
+          <span><b className="band-amber">50 to 64</b> middling</span>
           <span><b className="band-red">&lt;50</b> weak</span>
         </div>
       </section>
@@ -72,8 +72,8 @@ export default function Learn() {
         <h2>Red flags</h2>
         <p className="small muted">
           {mode === "expert"
-            ? "Cap the score at 59 with one flag, 39 with two or more. Main: TTM net loss; negative FCF in 2 of 3 years; shares +4%/yr; interest coverage < 2×. Financials: TTM loss; equity < 5% of assets; dividends > earnings in 2 of 3 years; shares +4%/yr; TBVPS down 3 years straight."
-            : "Some problems are so serious that a cheap price can't make up for them — like losing money, burning cash, or constantly creating new shares. One of these holds the score at 59 or below; two or more, at 39."}
+            ? "One red flag caps the score at 59; two or more cap it at 39. The main scorecard flags a TTM net loss, negative FCF in 2 of 3 years, share-count growth above 4% a year, or interest coverage below 2×. The financials scorecard flags a TTM loss, equity below 5% of assets, dividends above earnings in 2 of 3 years, share-count growth above 4% a year, or three consecutive declines in TBVPS."
+            : "Losses, cash burn, and repeated share issues can limit a score even when the stock looks cheap. One red flag holds the score at 59 or below. Two or more hold it at 39."}
         </p>
       </section>
 
@@ -83,13 +83,13 @@ export default function Learn() {
           <span className="chip f">F</span>{" "}
           {mode === "expert"
             ? "Banks, brokers, insurers, asset managers, card lenders and clearing-house exchanges use a financials scorecard (P/E and P/TBV vs history, shareholder yield, TBVPS growth, ROE, ROA, equity/assets, payout). Visa, Mastercard and PayPal stay on the main card."
-            : "Banks and insurers work differently — borrowing is their raw material — so they're judged on what they own versus owe, and on returns on the owners' money."}
+            : "Borrowing is part of how banks and insurers do business. We use a separate scorecard that compares what they own with what they owe and measures returns on shareholders' money."}
         </p>
         <p className="small" style={{ marginBottom: 0 }}>
           <span className="chip capex">CAPEX</span>{" "}
           {mode === "expert"
-            ? "When capex > 2× depreciation, cash conversion and the cash-flow trend subtract only maintenance capex (≈ D&A). FCF yield, FCF history and the red flag stay strict; debt-funded build-outs get capped."
-            : "Some companies (like the big AI cloud firms) are spending enormous amounts building data centers. Counting all of it against them would make a growing business look like it's shrinking, so we only count the 'keep the lights on' spending in some checks."}
+            ? "When capex exceeds 2× depreciation, cash conversion and cash-flow trends subtract only estimated maintenance capex (approximately D&A). FCF yield, FCF history, and red flags still use all capex. Debt-funded expansion can still limit the score."
+            : "A company building new data centers may spend much more than it needs to keep its existing business running. In some checks, we count only estimated maintenance spending. Other checks still count all spending, so borrowing to expand can still limit the score."}
         </p>
       </section>
 
@@ -97,12 +97,12 @@ export default function Learn() {
         <h2>The trend (kept separate)</h2>
         <p className="small muted">
           {mode === "expert"
-            ? "States from the 200-DMA: Uptrend (P > 200, 50 > 200, 200 rising) · Recovering (back above after most of 6 months below) · Mixed · Weakening (just below; averages not rolled over) · Downtrend. RS = 12-1 month return minus SPY. Ind = industry ETF 6-month return minus SPY."
-            : "The score is about the company. The trend is about the stock price — whether investors have been buying or selling. A great company can still have a falling price. When the two disagree, it's worth asking why."}
+            ? "Trend uses the 200-DMA. Uptrend means price and the 50-DMA are above a rising 200-DMA. Recovering means price has moved back above it after spending most of six months below. Weakening means price has slipped below before the averages turn down. The other states are Mixed and Downtrend. RS compares the 12-1 month return with SPY. Ind compares industry peers with SPY over six months, with an industry ETF fallback."
+            : "The score describes the business. The trend describes its share price. A company can score well while its price falls. Read both before drawing a conclusion."}
         </p>
         <div className="grid two small">
-          <div className="setup long"><b>Good score + rising price</b><br />{mode === "expert" ? "How much good news is priced in?" : "Everyone likes it — are you paying too much?"}</div>
-          <div className="setup caution"><b>Good score + falling price</b><br />{mode === "expert" ? "Cheap for a reason, or overreaction?" : "A sale — or do others know something?"}</div>
+          <div className="setup long"><b>Good score + rising price</b><br />{mode === "expert" ? "How much good news is priced in?" : "Does the higher price already reflect the good news?"}</div>
+          <div className="setup caution"><b>Good score + falling price</b><br />{mode === "expert" ? "Cheap for a reason, or overreaction?" : "Is the stock cheaper, or is there a problem the score misses?"}</div>
           <div className="setup caution"><b>Weak score + rising price</b><br />{mode === "expert" ? "What does the market see that the numbers don't?" : "Turnaround coming, or just hype?"}</div>
           <div className="setup short"><b>Weak score + falling price</b><br />{mode === "expert" ? "What would have to change?" : "Usually one to avoid."}</div>
         </div>
@@ -112,14 +112,14 @@ export default function Learn() {
         <h2>Day trading</h2>
         <p className="small">
           {mode === "expert"
-            ? "Signals from daily + 5-minute bars: gap, RVOL (time-of-day adjusted), VWAP, RSI(14), ATR(14), 20-EMA stretch, opening range. Setups: Gap & Go, gap fade, gap-down reclaim, ORB, 20-day breakout, oversold bounce, VWAP reclaim, overextended. Stops/targets are mechanical (structure or 1 ATR; 2R target). Data is delayed — screening only."
-            : "Day traders look for stocks moving a lot today on lots of trading, then try to catch part of the move with a planned exit. The app spots common patterns and explains each one. It also has a calculator so you never risk more than you decided to."}
+            ? "Signals use daily and 5-minute bars: gap, time-adjusted RVOL, VWAP, RSI(14), ATR(14), distance from the 20-EMA, and the opening range. Setups include Gap & Go, gap fade, gap-down reclaim, ORB, 20-day breakout, oversold bounce, VWAP reclaim, and overextended. Stops use price structure or 1 ATR, with a 2R target. Data is delayed; use it for screening."
+            : "Day traders look for price moves backed by heavy trading and plan where to exit. The app explains common patterns and estimates position size from your chosen risk budget. It cannot guarantee the amount you will lose on a trade."}
         </p>
         <Only mode="beginner">
           <ul className="small muted" style={{ paddingLeft: 18, marginBottom: 0 }}>
             <li>Decide where you&apos;ll get out <i>before</i> you get in.</li>
             <li>Risk a small, fixed slice of your money per trade (many use 1%).</li>
-            <li>Practice with pretend money first — most brokers have a paper-trading mode.</li>
+            <li>Practice with pretend money first. Most brokers have a paper-trading mode.</li>
             <li>A great long-term company can be a terrible day trade, and the other way round.</li>
           </ul>
         </Only>
@@ -136,8 +136,8 @@ export default function Learn() {
       </section>
 
       <p className="tiny faint">
-        Methodology adapted from The Traveling Trader&apos;s &ldquo;How the TTT Score Works&rdquo;. The original doesn&apos;t publish check thresholds, so the sliding
-        scales here are this app&apos;s own and shown on each check in Expert mode. Scores won&apos;t match TTT&apos;s published numbers.
+        This methodology is adapted from The Traveling Trader&apos;s &quot;How the TTT Score Works&quot;. The original does not publish check thresholds.
+        We set our own scales and show them on each check in Expert mode, so our scores will not match TTT&apos;s published numbers.
       </p>
       <Disclaimer />
     </div>

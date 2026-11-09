@@ -110,14 +110,14 @@ export function RankTable({ rows, startRank = 1, showDelta = true }: { rows: Rad
       </table>
       <div className="legend tiny muted">
         <span><i className="sw bg-lime" /> 80+</span>
-        <span><i className="sw bg-green" /> 65–79</span>
-        <span><i className="sw bg-amber" /> 50–64</span>
+        <span><i className="sw bg-green" /> 65 to 79</span>
+        <span><i className="sw bg-amber" /> 50 to 64</span>
         <span><i className="sw bg-red" /> under 50</span>
         <span><span className="band-red">⚑</span> red flag caps score</span>
         <span><span className="chip f-outline">F</span> financials scorecard</span>
         <span><span className="chip capex-outline">CAPEX</span> spending &gt;2× depreciation</span>
         {rows.some((r) => r.scorable && hasLimitedHistory(r.yearsOfHistory)) && (
-          <span>Limited history = provisional score from four annual periods</span>
+          <span>Scores marked Limited history use just four annual reports.</span>
         )}
       </div>
       <p className="tiny faint" style={{ marginTop: 6 }}>

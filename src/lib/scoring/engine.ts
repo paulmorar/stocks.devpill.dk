@@ -9,8 +9,8 @@ import { bandOf, hasLimitedHistory, MIN_HISTORY_YEARS, type PillarId, type Pilla
 export const PILLARS: Record<PillarId, { label: string; max: number; question: string; simpleQuestion: string }> = {
   value: { label: "Value", max: 25, question: "Is the price reasonable for what you get?", simpleQuestion: "Is it a fair price?" },
   growth: { label: "Growth", max: 25, question: "Is the business getting bigger?", simpleQuestion: "Is it growing?" },
-  quality: { label: "Quality", max: 30, question: "Does it earn great returns — consistently?", simpleQuestion: "Is it a really good business?" },
-  health: { label: "Financial Health", max: 20, question: "Can it pay its bills and protect your slice?", simpleQuestion: "Is it financially safe?" },
+  quality: { label: "Quality", max: 30, question: "Does it consistently earn strong returns?", simpleQuestion: "Does it earn steady profits?" },
+  health: { label: "Financial Health", max: 20, question: "Can it pay its bills without diluting shareholders?", simpleQuestion: "Can it pay its bills without issuing more shares?" },
 };
 
 /** Card networks and payment processors stay on the main scorecard (per the methodology). */
@@ -29,8 +29,8 @@ export function isFinancial(c: CompanyData) {
 
 export function notScoredReason(c: CompanyData): string | undefined {
   const qt = (c.profile.quoteType ?? "EQUITY").toUpperCase();
-  if (qt === "ETF" || qt === "MUTUALFUND") return "ETFs and funds aren't scored — they hold many companies.";
-  if (/reit/i.test(c.profile.industry ?? "")) return "REITs aren't scored — their accounting (depreciation on property) distorts these checks.";
+  if (qt === "ETF" || qt === "MUTUALFUND") return "We don't score ETFs or funds because they hold many companies.";
+  if (/reit/i.test(c.profile.industry ?? "")) return "We don't score REITs because property depreciation makes these checks unsuitable.";
   if (c.annual.length < MIN_HISTORY_YEARS) return `Only ${c.annual.length} years of history; at least ${MIN_HISTORY_YEARS} are needed.`;
   return undefined;
 }
@@ -101,7 +101,7 @@ export function scoreCompany(c: CompanyData): ScoreResult {
   const reason = notScoredReason(c);
   const notes: string[] = [];
   if (!reason && hasLimitedHistory(m.annual.length)) {
-    notes.push(`Limited history: ${m.annual.length} annual periods. Treat this score as provisional; unavailable long-term checks are skipped and their pillar is re-weighted.`);
+    notes.push(`Limited history: ${m.annual.length} annual reports. This score is provisional. We skip checks that need more data and share their points across the remaining checks in the same pillar.`);
   }
   if (m.capexMode && financial) notes.push("CAPEX: spending is more than 2× depreciation. The financials scorecard doesn't use cash-flow checks, so this is informational.");
   if (m.capexMode && !financial) notes.push("CAPEX mode: spending is more than 2× depreciation, so cash conversion and the cash-flow trend only subtract maintenance spending.");

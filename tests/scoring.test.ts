@@ -107,6 +107,7 @@ describe("scoreCompany on demo companies", () => {
     expect(result.notes.join(" ")).toMatch(/Limited history.*provisional/);
     expect(summarize(symbol, result).expert).toMatch(/Limited history.*provisional/);
     expect(summarize(symbol, result).simple).toMatch(/Limited history.*provisional/);
+    expect(summarize(symbol, result).simple).toContain("early estimate");
     expect(result.total).toBeGreaterThanOrEqual(0);
     expect(result.total).toBeLessThanOrEqual(100);
 
@@ -174,7 +175,18 @@ describe("scoreCompany on demo companies", () => {
       }
       const sum = summarize(s, r);
       expect(sum.simple).not.toMatch(/undefined|NaN/);
+      expect(sum.expert).not.toMatch(/[—–“”]/);
+      expect(sum.simple).not.toMatch(/[—–“”]/);
     }
+  });
+
+  it("explains when there is not enough data to compare pillars", () => {
+    const result = scoreCompany(demo("NWSW"));
+    result.pillars = [];
+    const summary = summarize("Northwind", result);
+    expect(summary.expert).toContain("There is not enough data to compare the pillars.");
+    expect(summary.simple).toContain("model. There is not enough data to compare the pillars.");
+    expect(summary.expert + summary.simple).not.toContain("undefined");
   });
 
   it("dilution red flag fires above 4%/yr", () => {

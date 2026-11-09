@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { HistoryBadge, ScoreCardMini } from "@/components/ui";
+import { Disclaimer, HistoryBadge, ScoreCardMini } from "@/components/ui";
 import { RankTable } from "@/components/rank-table";
 import type { LongTermReport } from "@/lib/analyze";
 import { demoCompany } from "@/lib/data/demo";
@@ -33,10 +33,12 @@ describe("limited-history reporting", () => {
     const r = report(4);
     const table = renderToStaticMarkup(createElement(RankTable, { rows: [toRow(r)] }));
     const card = renderToStaticMarkup(createElement(ScoreCardMini, { r }));
-    expect(table).toContain("Limited history: 4y");
-    expect(table).toContain("provisional score from four annual periods");
-    expect(card).toContain("Limited history: 4y");
-    expect(card).toContain("Provisional score");
+    expect(table).toContain("Limited history: 4 years");
+    expect(table).toContain("use just four annual reports");
+    expect(card).toContain("Limited history: 4 years");
+    expect(card).toContain("provisional score");
+    expect(card).toContain("early estimate");
+    expect(card).toContain("skip checks that need more history");
   });
 
   it.each([undefined, 3, 5, 10])("does not invent limited-history metadata for %s years", (years) => {
@@ -66,5 +68,12 @@ describe("limited-history reporting", () => {
       rows: [{ ...row, scorable: false }],
     };
     expect(withDeltas([row], previous)[0]?.delta).toBeNull();
+  });
+
+  it("keeps the financial cautions in plain language", () => {
+    const text = renderToStaticMarkup(createElement(Disclaimer));
+    expect(text).toContain("not investment advice");
+    expect(text).toContain("not a buy or sell signal, a risk rating, or a forecast");
+    expect(text).not.toMatch(/[—–“”]/);
   });
 });

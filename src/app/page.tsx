@@ -141,27 +141,26 @@ export default function Home() {
         <Only mode="beginner">
           <h1>Is this a good company, at a fair price?</h1>
           <p className="muted">
-            Every company gets a score from 0 to 100 from four questions: is the price fair, is it growing, is it a really good business, and is it
-            financially safe? Next to it is the <b>trend</b> — whether the stock price has been going up or down. They&apos;re kept apart on purpose: a great
-            company can have a falling price, and that disagreement is often the most interesting part.
+            We score companies with enough financial history from 0 to 100. The score covers price, growth, profitability, and financial health.
+            The <b>trend</b> shows whether the stock price is rising or falling. A company can score well while its share price falls, so read both.
           </p>
           <p className="small muted" style={{ marginBottom: 0 }}>
-            <b>On the Radar</b> lists every big US company (S&amp;P 500 and Nasdaq 100) scoring 80 or more, updated every weekend. Tap a row to see every check
-            explained. Hover underlined words like <Term id="pe" /> for a definition.
+            <b>On the Radar</b> shows stocks in the S&amp;P 500 and Nasdaq 100 that score 80 or more. The weekly scan updates the list each weekend.
+            Open a row to see how we calculated its score. Hover over underlined terms such as <Term id="pe" /> to see a definition.
           </p>
         </Only>
         <Only mode="expert">
           <h1>Long-term scorecard</h1>
           <p className="muted small" style={{ marginBottom: 0 }}>
-            0–100 fundamentals score (Value 25 · Growth 25 · Quality 30 · Health 20), partial credit, own-history valuation, TTM-inclusive trends, red-flag
-            caps (59 / 39), F and CAPEX scorecards. Trend from the 200-DMA with 12-1 RS and industry-peer momentum, never blended. Weekly universe scan with
-            week-over-week deltas.
+            The fundamentals score runs from 0 to 100: Value 25 · Growth 25 · Quality 30 · Health 20. Checks award partial credit, compare valuation
+            with the company&apos;s own history, and include TTM data in growth trends. Red flags cap scores at 59 or 39; F and CAPEX rules apply where relevant.
+            Price trend stays separate, using the 200-DMA, 12-1 RS, and industry-peer momentum. Weekly scans show changes since the previous snapshot.
           </p>
         </Only>
         {meta?.demo && <div className="banner info small" style={{ marginTop: 8 }}>Demo mode: fictional sample companies with made-up numbers.</div>}
         {meta && !meta.demo && !meta.fmp && (
           <p className="tiny faint" style={{ marginTop: 6, marginBottom: 0 }}>
-            Second data source off: add <code>FMP_API_KEY</code> to unlock the 10-year checks.
+            Using Yahoo data only. An optional <code>FMP_API_KEY</code> can add the longer history needed for 10-year checks.
           </p>
         )}
       </section>
@@ -203,12 +202,12 @@ export default function Home() {
         {snapshotTab && snapErr && <p className="band-red small">Couldn&apos;t load the weekly list: {snapErr}</p>}
         {snapshotTab && snap && !hasSnapshot && (
           <div className="banner info small">
-            <b>{snap.rows.length ? "No imported companies qualify for ranking." : "No weekly ranking data is available yet."}</b>{" "}
-            {snap.rows.length > 0 && <>Scoring needs at least four annual periods; funds and REITs are excluded. </>}
-            The weekly scan checks all ~515 S&amp;P 500 and Nasdaq-100 companies, which takes a while, so it runs
-            on a schedule instead of on page load. Trigger <i>Weekly scan</i> in the repo&apos;s GitHub Actions tab (runs every Sunday after that), or run{" "}
-            <code>npm run scan</code> locally and commit <code>src/data/snapshots</code>. Meanwhile, use <i>My portfolio</i>, <i>Watchlist</i> or{" "}
-            <i>Discover</i>, which score live.
+            <b>{snap.rows.length ? "None of the imported companies meet the scoring requirements." : "The weekly ranking has no data yet."}</b>{" "}
+            {snap.rows.length > 0 && <>We need at least four annual reports. We don&apos;t score funds or REITs. </>}
+            The scan covers about 515 S&amp;P 500 and Nasdaq-100 companies. It runs separately because scanning them all would slow down this page.
+            Run <i>Weekly scan</i> from the repository&apos;s GitHub Actions tab, or run{" "}
+            <code>npm run scan</code> locally and commit <code>src/data/snapshots</code>. The scheduled scan runs every Sunday.
+            You can use <i>My portfolio</i>, <i>Watchlist</i>, or <i>Discover</i> while you wait; those tabs fetch scores when you open them.
           </div>
         )}
         {tab === "radar" && hasSnapshot && (radar.length ? <RankTable rows={radar} /> : <p className="muted">Nothing scores 80+ this week.</p>)}

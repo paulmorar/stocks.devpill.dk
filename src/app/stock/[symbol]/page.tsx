@@ -180,7 +180,7 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
 
       {s.redFlags.length > 0 && (
         <section className="banner risk">
-          <b>Red flags</b> — {mode === "expert" ? `cap the score at ${s.redFlags.length >= 2 ? 39 : 59}.` : "a cheap price can't make up for these."}
+          <b>Red flags.</b> {mode === "expert" ? `These cap the score at ${s.redFlags.length >= 2 ? 39 : 59}.` : "These problems limit the score, even if the price looks cheap."}
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {s.redFlags.map((f) => (
               <li key={f.id}>
@@ -250,9 +250,9 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
       <section className="panel small">
         <h3>What this score is not</h3>
         <ul className="muted" style={{ margin: 0, paddingLeft: 18 }}>
-          <li><b>Not a buy or sell signal</b> — {mode === "expert" ? "a starting point for your own research." : "it tells you where to start looking, not what to do."}</li>
-          <li><b>Not a risk rating</b> — {mode === "expert" ? "near-perfect fundamentals didn't stop META falling ~75% from its 2021 peak to its 2022 low." : "even great companies' stocks can fall a lot. Facebook's owner lost about three-quarters of its value in 2022 despite strong finances."}</li>
-          <li><b>Not a forecast</b> — {mode === "expert" ? "forward-looking checks rely on analyst estimates." : "some checks use experts' guesses about the future, and those can be wrong."}</li>
+          <li>This is not a buy or sell signal. {mode === "expert" ? "Use it as a starting point for your own research." : "Use it to decide what to research, not what to trade."}</li>
+          <li>A strong score does not mean low risk. {mode === "expert" ? "META fell about 75% from its 2021 peak to its 2022 low despite strong fundamentals." : "Even companies with strong finances can lose much of their share value. Facebook's owner lost about three-quarters of its value in 2022."}</li>
+          <li>This is not a forecast. {mode === "expert" ? "Forward-looking checks rely on analyst estimates, which can be wrong." : "Some checks use analysts' estimates of future earnings. Those estimates can be wrong."}</li>
         </ul>
         <p className="tiny faint" style={{ marginTop: 8 }}>
           Sources: {r.sources.join(" + ")} · {s.yearsOfHistory} fiscal years · fetched {new Date(r.fetchedAt).toLocaleString()}

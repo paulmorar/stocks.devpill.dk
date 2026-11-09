@@ -100,22 +100,25 @@ Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fi
 
 ### Scoring with Yahoo-only history
 
-Stocks with at least **four annual periods** can be ranked without an FMP key.
-Four-period scores carry a **Limited history** badge and a provisional-score explanation
-on stock pages, cards, and ranking tables. Funds, ETFs, REITs, and stocks with fewer
-than four annual periods remain excluded; S&P 500 membership does not bypass those rules.
+You can rank stocks with four or more annual reports without an FMP key.
+When we have only four reports, stock pages, cards, and ranking tables show a
+Limited history badge. These scores are provisional: they are early estimates based
+on a shorter record. We do not score funds, ETFs, REITs, or companies with fewer than
+four annual reports. Stocks in the S&P 500 follow the same rules.
 
-The 25/25/30/20 pillar weights and 59/39 red-flag caps are unchanged. Revenue growth
-uses the actual elapsed span (four consecutive reports give a three-year CAGR).
-P/E comparisons state how many annual observations are available. Longer-history
-checks remain skipped when their data requirements are not met; missing years are
-never invented. The existing per-pillar re-weighting still applies, so shorter-history
-scores should not be treated as equally well-supported as longer-history scores.
+Value is worth 25 points, growth 25, quality 30, and financial health 20.
+One red flag caps the score at 59; two or more cap it at 39. Revenue growth uses
+the time between reports, so four consecutive annual reports give a three-year CAGR.
+P/E comparisons show how many observations we used. If a check needs more history
+than we have, we skip it and share its points across the remaining checks in that
+pillar. We do not fill in missing years. A score based on four reports has less
+evidence behind it than one based on a longer record.
 
-After deploying this scoring change, run **Weekly scan** on `main` with the symbols
-input empty to rebuild the complete snapshot, then confirm Vercel deploys its commit.
-Existing snapshots keep their original eligibility flags until regenerated. The scan
-log separates ranked, limited-history, excluded, and failed companies.
+To refresh all rankings, run Weekly scan on `main` with the symbols input empty.
+Then check that Vercel deploys the resulting commit. The website reads the saved
+snapshot, so changes to scoring rules need a new scan and deployment before they
+appear in the rankings. The scan log lists how many companies were ranked, had
+limited history, were excluded, or failed to load.
 
 ## How the score maps to the TTT methodology
 
