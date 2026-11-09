@@ -100,6 +100,7 @@ export function scoreCompany(c: CompanyData): ScoreResult {
   const financial = isFinancial(c);
   const reason = notScoredReason(c);
   const notes: string[] = [];
+  if (m.capexMode && financial) notes.push("CAPEX: spending is more than 2× depreciation. The financials scorecard doesn't use cash-flow checks, so this is informational.");
   if (m.capexMode && !financial) notes.push("CAPEX mode: spending is more than 2× depreciation, so cash conversion and the cash-flow trend only subtract maintenance spending.");
   if (financial) notes.push("Scored on the financials scorecard (book value and return on equity).");
 
@@ -132,7 +133,8 @@ export function scoreCompany(c: CompanyData): ScoreResult {
     scorable: !reason,
     notScoredReason: reason,
     scorecard: financial ? "financials" : "main",
-    capexMode: m.capexMode && !financial,
+    // Shown on financials too (TTT marks ERIE as F + CAPEX); only the main card changes its cash-flow checks.
+    capexMode: m.capexMode,
     raw,
     total,
     band: bandOf(total),

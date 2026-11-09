@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { GLOSSARY } from "@/lib/glossary";
 import type { LongTermReport } from "@/lib/analyze";
 import type { Band, PillarResult } from "@/lib/scoring/types";
-import type { TrendResult } from "@/lib/trend";
+import { TREND_ICON, type TrendResult } from "@/lib/trend";
 import { signedPct } from "@/lib/util";
 import { useMode } from "./mode";
 
@@ -85,7 +85,7 @@ export function TrendBadge({ t, compact = false }: { t?: TrendResult; compact?: 
   if (!t) return <span className="faint small">No trend</span>;
   return (
     <div>
-      <span className={`trend trend-${t.state}`}>{t.state}</span>
+      <span className={`trend trend-${t.state}`}>{TREND_ICON[t.state]} {t.state}</span>
       <div className="tiny muted num">
         <Term id="rs">RS</Term> {t.rs !== undefined ? signedPct(t.rs) : "—"}
         {!compact || t.ind !== undefined ? (

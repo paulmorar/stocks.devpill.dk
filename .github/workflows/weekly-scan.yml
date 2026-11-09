@@ -1,0 +1,47 @@
+name: Weekly scan
+
+# Scores the whole S&P 500 + Nasdaq-100 universe once a week and commits the
+# snapshot. The commit triggers a Vercel deploy, so the app always serves the
+# latest list, and week-over-week changes come from the committed history.
+on:
+  schedule:
+    - cron: "17 5 * * 0" # Sundays 05:17 UTC, after Friday's close and any weekend data fixes
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Optional comma-separated symbols to rescore (default: whole universe)"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Refresh index membership
+        run: npm run universe
+        continue-on-error: true
+      - name: Score the universe
+        run: npm run scan -- ${{ github.event.inputs.symbols && format('--symbols {0}', github.event.inputs.symbols) || '' }}
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      - name: Commit snapshot
+        run: |
+          git config user.name "stock-scout-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/universe.json src/data/snapshots
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Weekly scan $(date -u +%F)"
+          git push

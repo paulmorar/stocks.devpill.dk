@@ -1,4 +1,6 @@
 import "server-only";
+import latest from "../data/snapshots/latest.json";
+import type { Snapshot } from "./snapshot";
 import { getCloses, getCompany, getDaily, getIntraday } from "./data";
 import { scoreCompany } from "./scoring/engine";
 import { summarize } from "./scoring/summary";
@@ -30,6 +32,12 @@ export async function analyzeLongTerm(symbol: string): Promise<LongTermReport> {
   ]);
   const score = scoreCompany(company);
   const trend = computeTrend(company.prices, spy, peers, proxy);
+  // Prefer industry-peer momentum from the weekly scan; the ETF proxy is the fallback.
+  const peerInd = company.profile.industry ? (latest as Snapshot).industries?.[company.profile.industry] : undefined;
+  if (trend && peerInd) {
+    trend.ind = peerInd.ind;
+    trend.industryProxy = `${peerInd.n} ${company.profile.industry} peers`;
+  }
   const warnings = [...company.warnings];
   if (!trend) warnings.push("Not enough price history for the trend reading.");
   return {

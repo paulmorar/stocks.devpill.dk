@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import type { LongTermReport } from "@/lib/analyze";
-import { getReport, scoreDelta, useWatchlist } from "@/lib/client";
+import { getReport, scoreDelta, usePortfolio, useSnapshot, useWatchlist } from "@/lib/client";
+import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
+import { TREND_ICON } from "@/lib/trend";
 import { fx, money, pct, signedPct } from "@/lib/util";
 import { Explain, Only, useMode } from "@/components/mode";
 import { Chips, Disclaimer, LineChart, RocketGauge, Term, TrendBadge } from "@/components/ui";
@@ -13,6 +15,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
   const symbol = decodeURIComponent(raw).toUpperCase();
   const { mode } = useMode();
   const wl = useWatchlist();
+  const pf = usePortfolio();
+  const { snap } = useSnapshot();
   const [r, setR] = useState<LongTermReport>();
   const [err, setErr] = useState<string>();
   const [delta, setDelta] = useState<number>();
@@ -38,6 +42,11 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
     );
   }
   if (!r) return <div className="skeleton" style={{ height: 420 }} />;
+
+  const weekly = snap?.rows.find((x) => x.symbol === symbol);
+  const lastWeek = weekly && typeof weekly.delta === "number" ? weekly.score - weekly.delta : undefined;
+  const weekDelta = lastWeek !== undefined && r.score.scorable ? r.score.total - lastWeek : delta;
+  const ref = tttRef(symbol);
 
   const s = r.score;
   const m = r.market;
@@ -65,8 +74,13 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
         <div className="row">
           <Link className="btn" href={`/day?symbol=${encodeURIComponent(symbol)}`}>Day-trading view</Link>
           {wl.ready && (
-            <button className={`btn ${wl.has(symbol) ? "" : "primary"}`} onClick={() => (wl.has(symbol) ? wl.remove(symbol) : wl.add(symbol))}>
-              {wl.has(symbol) ? "Remove from watchlist" : "Add to watchlist"}
+            <button className="btn" onClick={() => (wl.has(symbol) ? wl.remove(symbol) : wl.add(symbol))}>
+              {wl.has(symbol) ? "✓ Watching" : "+ Watchlist"}
+            </button>
+          )}
+          {pf.ready && (
+            <button className={`btn ${pf.has(symbol) ? "" : "primary"}`} onClick={() => (pf.has(symbol) ? pf.remove(symbol) : pf.add(symbol))}>
+              {pf.has(symbol) ? "✓ In portfolio" : "+ Portfolio"}
             </button>
           )}
         </div>
@@ -78,9 +92,9 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
             {s.scorable ? (
               <div style={{ textAlign: "center" }}>
                 <RocketGauge score={s.total} band={s.band} />
-                {delta !== undefined && delta !== 0 && (
-                  <div className={`small num ${delta > 0 ? "band-green" : "band-red"}`}>
-                    {delta > 0 ? "▲" : "▼"} {Math.abs(delta)} since last week
+                {weekDelta !== undefined && weekDelta !== 0 && (
+                  <div className={`small num ${weekDelta > 0 ? "band-green" : "band-red"}`}>
+                    {weekDelta > 0 ? "▲" : "▼"} {Math.abs(weekDelta)} since last week
                   </div>
                 )}
                 {s.cap !== undefined && <div className="tiny band-red">Capped from {s.raw} by red flags</div>}
@@ -126,6 +140,41 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           <div className="tiny muted" style={{ marginTop: 4 }}>
             {mode === "expert" ? "Score rates the business; trend shows the market. They're never blended." : "The score is about the company. The trend is about what other investors are doing. When they disagree, that's worth digging into."}
           </div>
+        </section>
+      )}
+
+      {ref && s.scorable && (
+        <section className="panel small">
+          <div className="row between">
+            <h3 style={{ marginBottom: 0 }}>{mode === "expert" ? "vs The Traveling Trader" : "What another trader's model says"}</h3>
+            <span className="tiny faint">TTT published {new Date(`${TTT_REFERENCE_DATE}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {ref.list === "radar" ? "On the Radar" : "Portfolio holdings"}</span>
+          </div>
+          <div className="scroll-x">
+            <table style={{ marginTop: 6 }}>
+              <thead>
+                <tr><th></th><th>Score</th><th>Value</th><th>Growth</th><th>Quality</th><th>Fin. health</th><th>Trend</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>TTT</td>
+                  <td className="num"><b>{ref.score}</b></td>
+                  <td className="num">{ref.v}/25</td><td className="num">{ref.g}/25</td><td className="num">{ref.q}/30</td><td className="num">{ref.h}/20</td>
+                  <td>{TREND_ICON[ref.trend]} {ref.trend}</td>
+                </tr>
+                <tr>
+                  <td>Stock Scout</td>
+                  <td className={`num band-${s.band}`}><b>{s.total}</b></td>
+                  {s.pillars.map((p) => <td key={p.id} className="num">{Math.round(p.points)}/{p.maxPoints}</td>)}
+                  <td>{r.trend ? `${TREND_ICON[r.trend.state]} ${r.trend.state}` : "—"}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="tiny muted" style={{ marginTop: 6, marginBottom: 0 }}>
+            {mode === "expert"
+              ? "Same four pillars, independently set thresholds (TTT doesn't publish theirs). Gaps of a few points per pillar are expected; `npm run calibrate` measures them across all 42 published names."
+              : "Both use the same four questions, but each decides its own pass marks, so a few points of difference is normal. If they disagree a lot, look at which pillar differs and read why."}
+          </p>
         </section>
       )}
 

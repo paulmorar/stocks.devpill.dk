@@ -2,6 +2,8 @@
 
 Find and understand stocks, two ways:
 
+- **On the Radar / Full ranking**: every S&P 500 + Nasdaq-100 company scored weekly, ranked in the same layout as TTT's weekly post, with ▲▼ changes vs last week.
+- **My portfolio / Watchlist / Discover**: your own lists, scored live and ranked the same way.
 - **Long-term**: a 0–100 business-quality score modelled on The Traveling Trader's TTT Score (Value 25 · Growth 25 · Quality 30 · Financial Health 20), with red-flag caps, a financials scorecard (**F**), a heavy-investor mode (**CAPEX**), and a separate 200-day trend reading with RS and industry momentum.
 - **Day trading**: a scanner for stocks "in play" (gap, relative volume, VWAP, RSI, ATR, stretch) that spots common setups, suggests mechanical stops/targets, and sizes positions from your risk.
 
@@ -20,7 +22,7 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # 43 unit tests: scoring, trend, splits, merging, day-trading signals
+npm test          # 50 unit tests: scoring, trend, splits, merging, snapshots, day-trading signals
 npm run typecheck
 npm run build
 ```
@@ -30,6 +32,30 @@ npm run build
 1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 22+).
 2. Optional env var `FMP_API_KEY`.
 3. Deploy. API responses carry `s-maxage` headers, so Vercel's CDN absorbs repeat requests (scores 30 min, day-trading data 60 s).
+
+## Weekly scan (On the Radar)
+
+Scoring ~515 companies takes too long for a page load or a Vercel function, so it runs as a scheduled GitHub Action:
+
+1. `.github/workflows/weekly-scan.yml` runs every Sunday 05:17 UTC (or on demand from the Actions tab, optionally for a few symbols).
+2. `npm run universe` refreshes S&P 500 / Nasdaq-100 membership (keeps the old list if a source fails).
+3. `npm run scan` scores everything and writes `src/data/snapshots/<date>.json` + `latest.json` (26 weeks kept). Deltas are computed against the previous file, so ▲▼ are real week-over-week changes.
+4. The workflow commits the snapshot; the commit triggers a Vercel deploy that serves it via `/api/radar`.
+
+Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` as a repo secret if you use FMP. A full weekly scan is ~1,500 FMP calls, above the free plan's 250/day, so FMP falls back to Yahoo-only for the rest unless you're on a paid plan.
+
+Locally: `npm run scan -- --limit 30` for a quick test, `npm run scan -- --symbols NVDA,ASML` to rescore a few names inside today's snapshot.
+
+## Calibrating against TTT
+
+`src/data/ttt-reference.ts` holds The Traveling Trader's published scores from 8 Nov 2026 (23 "On the Radar" + 19 portfolio holdings). Stock pages that appear there show TTT's numbers next to ours.
+
+```bash
+npm run calibrate                     # all 42; writes calibration-report.md
+npm run calibrate -- --symbols NOW,AAPL
+```
+
+The report shows the gap for each stock and each pillar, the overall bias and mean absolute error per pillar, and agreement on trend, F and CAPEX. For pillars off by 4+ points it lists every check's partial credit. Those tell you which scales in `src/lib/scoring/checks-*.ts` to move. Running it once with live data and tuning from the report is the obvious next step: this app's thresholds are educated guesses until then.
 
 ## Data sources
 
@@ -49,9 +75,9 @@ Interpretation choices worth knowing:
 - **Cash-flow trend** uses free cash flow on the main card, and OCF minus maintenance capex (≈ D&A) in CAPEX mode — so CAPEX mode is the more lenient one, as the deck intends.
 - **Cash conversion** = FCF ÷ net income over the latest three periods (maintenance basis in CAPEX mode).
 - **"Borrowing to build still gets capped"**: in CAPEX mode, if debt rose >15% while strict FCF is negative, the debt-load check is capped at half credit.
-- **Ind** uses an industry ETF as the peer group (software → IGV, semis → SOXX, regional banks → KRE, …, falling back to the sector SPDR). The deck uses actual industry peers.
-- **"Change since last week"** is tracked in your browser (localStorage), not server-side.
-- **Universe**: your watchlist plus Yahoo's predefined screens, scored on demand — not a weekly batch over all S&P 500 / Nasdaq 100 names. A Vercel Cron job writing to a KV store would be the next step for that.
+- **Ind** is computed from actual peers, the way TTT's lists suggest (their ASML, NVDA, MU and KLAC all show the same −18%): the weekly scan takes the median 6-month return of all universe stocks in the same Yahoo industry (3+ peers) minus the S&P 500's. Stocks outside the universe, or before the first scan, fall back to an industry ETF (software → IGV, semis → SOXX, …).
+- **CAPEX on financials**: shown when spending is over 2× depreciation (TTT marks ERIE as F + CAPEX). The financials scorecard has no cash-flow checks, so on those it's informational.
+- **"Change since last week"** comes from the committed weekly snapshots. Stocks outside the universe fall back to what your browser saw last week.
 
 ## Layout
 
@@ -60,6 +86,9 @@ src/lib/data/        yahoo.ts, yahoo-map.ts, fmp.ts, merge.ts, splits.ts, demo.t
 src/lib/scoring/     engine.ts (pillars, re-weighting, flags, caps), checks-main.ts, checks-financials.ts, metrics.ts, summary.ts
 src/lib/trend.ts     200-DMA states, RS, Ind, score × trend quadrants
 src/lib/shortterm.ts day-trading indicators, setups, position sizing
-src/app/api/         score/[symbol], short/[symbol], screen, search, meta
+src/lib/snapshot.ts  weekly snapshot format, deltas, ranking, industry-peer momentum
+src/data/            universe.json, snapshots/, ttt-reference.ts
+scripts/             scan.ts, update-universe.ts, calibrate.ts
+src/app/api/         score/[symbol], short/[symbol], radar, screen, search, meta
 src/app/             / (long-term), /stock/[symbol], /day, /learn
 ```

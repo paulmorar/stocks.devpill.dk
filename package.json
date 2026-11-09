@@ -8,7 +8,10 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "scan": "NODE_OPTIONS=--conditions=react-server tsx scripts/scan.ts",
+    "universe": "tsx scripts/update-universe.ts",
+    "calibrate": "NODE_OPTIONS=--conditions=react-server tsx scripts/calibrate.ts"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -22,6 +25,7 @@
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.1.0"
   },

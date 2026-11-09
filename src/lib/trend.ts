@@ -8,6 +8,14 @@ import type { Explain } from "./scoring/types";
  */
 export type TrendState = "Uptrend" | "Recovering" | "Mixed" | "Weakening" | "Downtrend";
 
+export const TREND_ICON: Record<TrendState, string> = {
+  Uptrend: "▲",
+  Recovering: "↗",
+  Mixed: "◆",
+  Weakening: "↘",
+  Downtrend: "▼",
+};
+
 export interface TrendResult {
   state: TrendState;
   price: number;
@@ -20,7 +28,10 @@ export interface TrendResult {
   rs?: number;
   /** Industry peers' 6-month return minus S&P 500's. */
   ind?: number;
+  /** What Ind was measured against: "14 Semiconductors peers" or an ETF ticker. */
   industryProxy?: string;
+  /** This stock's own 6-month return. */
+  r6?: number;
   explain: Explain;
   /** Recent closes with moving averages, for the chart (last ~260 sessions). */
   chart: { date: string; close: number; ma50?: number; ma200?: number }[];
@@ -120,7 +131,8 @@ export function computeTrend(prices: PricePoint[], spy?: PricePoint[], peers?: P
     return { date: p.date, close: p.close, ma50: smaAt(closes, idx, 50), ma200: smaAt(closes, idx, 200) };
   });
 
-  return { state, price, ma50, ma200, ma200Rising, belowShare6m, rs, ind, industryProxy: proxy, explain: explainTrend(state), chart };
+  const r6 = windowReturn(prices, 126, 0);
+  return { state, price, ma50, ma200, ma200Rising, belowShare6m, rs, ind, industryProxy: proxy, r6, explain: explainTrend(state), chart };
 }
 
 export function explainTrend(state: TrendState): Explain {

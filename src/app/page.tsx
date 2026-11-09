@@ -2,172 +2,295 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson, getReport, scoreDelta, useMany, useWatchlist } from "@/lib/client";
+import { fetchJson, getReport, scoreDelta, useMany, usePortfolio, useSnapshot, useWatchlist } from "@/lib/client";
 import type { LongTermReport } from "@/lib/analyze";
+import { rank, type RadarRow, toRow } from "@/lib/snapshot";
+import { TTT_PORTFOLIO } from "@/data/ttt-reference";
 import { Only, useMode } from "@/components/mode";
+import { RankTable } from "@/components/rank-table";
 import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
 
 type Meta = { demo: boolean; fmp: boolean; demoSymbols: string[] };
-type ScreenHit = { symbol: string; name: string };
+type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "discover";
+type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "portfolio_anchors" | "undervalued_growth_stocks";
 
-const LISTS = [
-  { id: "watchlist", label: "My watchlist" },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "radar", label: "On the Radar" },
+  { id: "ranking", label: "Full ranking" },
+  { id: "portfolio", label: "My portfolio" },
+  { id: "watchlist", label: "Watchlist" },
+  { id: "discover", label: "Discover" },
+];
+const SCREENS: { id: ScreenId; label: string }[] = [
   { id: "undervalued_large_caps", label: "Undervalued large caps" },
   { id: "growth_technology_stocks", label: "Growth tech" },
   { id: "portfolio_anchors", label: "Portfolio anchors" },
   { id: "undervalued_growth_stocks", label: "Undervalued growth" },
-] as const;
+];
+const PAGE = 50;
 
-type SortKey = "score" | "rs" | "symbol";
+const fmtDate = (d?: string) =>
+  d ? new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
 
 export default function Home() {
   const { mode } = useMode();
   const wl = useWatchlist();
+  const pf = usePortfolio();
+  const { snap, error: snapErr } = useSnapshot();
   const [meta, setMeta] = useState<Meta>();
-  const [tab, setTab] = useState<(typeof LISTS)[number]["id"]>("watchlist");
-  const [screen, setScreen] = useState<ScreenHit[]>([]);
+  const [tab, setTab] = useState<Tab>("radar");
+  const [screenId, setScreenId] = useState<ScreenId>("undervalued_large_caps");
+  const [screen, setScreen] = useState<string[]>([]);
   const [screenErr, setScreenErr] = useState<string>();
-  const [radarOnly, setRadarOnly] = useState(false);
-  const [sort, setSort] = useState<SortKey>("score");
+  const [view, setView] = useState<"table" | "cards">("table");
+  const [page, setPage] = useState(0);
+  const [filter, setFilter] = useState("");
+  const [introHidden, setIntroHidden] = useState(false);
 
   useEffect(() => {
     fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, demoSymbols: [] }));
+    try {
+      const t = localStorage.getItem("scout:tab") as Tab | null;
+      if (t && TABS.some((x) => x.id === t)) setTab(t);
+      const v = localStorage.getItem("scout:view");
+      if (v === "cards" || v === "table") setView(v);
+      setIntroHidden(localStorage.getItem("scout:intro") === "hidden");
+    } catch {}
   }, []);
+  const pickTab = (t: Tab) => {
+    setTab(t);
+    setPage(0);
+    try {
+      localStorage.setItem("scout:tab", t);
+    } catch {}
+  };
+  const pickView = (v: "table" | "cards") => {
+    setView(v);
+    try {
+      localStorage.setItem("scout:view", v);
+    } catch {}
+  };
 
   useEffect(() => {
-    if (tab === "watchlist") return;
+    if (tab !== "discover" || meta?.demo) return;
     setScreen([]);
     setScreenErr(undefined);
-    fetchJson<ScreenHit[]>(`/api/screen?id=${tab}&count=25`).then(setScreen).catch((e) => setScreenErr(e.message));
-  }, [tab]);
+    fetchJson<{ symbol: string }[]>(`/api/screen?id=${screenId}&count=25`)
+      .then((h) => setScreen(h.map((x) => x.symbol)))
+      .catch((e) => setScreenErr(e.message));
+  }, [tab, screenId, meta?.demo]);
 
-  const symbols = useMemo(() => {
-    if (!meta) return [];
+  const snapshotTab = tab === "radar" || tab === "ranking";
+  const snapRows = useMemo(() => rank(snap?.rows ?? []), [snap]);
+  const snapBy = useMemo(() => new Map(snapRows.map((r) => [r.symbol, r])), [snapRows]);
+  const hasSnapshot = snapRows.length > 0;
+
+  // Lists scored live, on request.
+  const liveSymbols = useMemo(() => {
+    if (!meta || snapshotTab) return [];
     if (meta.demo) return meta.demoSymbols;
+    if (tab === "portfolio") return pf.ready ? pf.list : [];
     if (tab === "watchlist") return wl.ready ? wl.list : [];
-    return screen.map((s) => s.symbol);
-  }, [meta, tab, wl.ready, wl.list, screen]);
+    return screen;
+  }, [meta, snapshotTab, tab, pf.ready, pf.list, wl.ready, wl.list, screen]);
+  const { data, errors, pending } = useMany<LongTermReport>(liveSymbols, getReport, 3);
 
-  const { data, errors, pending } = useMany<LongTermReport>(symbols, getReport, 3);
-  const [deltas, setDeltas] = useState<Record<string, number | undefined>>({});
+  const [localDeltas, setLocalDeltas] = useState<Record<string, number | undefined>>({});
   useEffect(() => {
     const d: Record<string, number | undefined> = {};
     for (const [s, r] of Object.entries(data)) if (r.score.scorable) d[s] = scoreDelta(s, r.score.total);
-    setDeltas(d);
+    setLocalDeltas(d);
   }, [data]);
 
-  const reports = symbols.map((s) => data[s]).filter((r): r is LongTermReport => !!r);
-  const sorted = [...reports]
-    .filter((r) => !radarOnly || (r.score.scorable && r.score.total >= 80))
-    .sort((a, b) => {
-      if (sort === "symbol") return a.profile.symbol.localeCompare(b.profile.symbol);
-      if (sort === "rs") return (b.trend?.rs ?? -9) - (a.trend?.rs ?? -9);
-      return (b.score.scorable ? b.score.total : -1) - (a.score.scorable ? a.score.total : -1);
-    });
-  const turningUp = reports.filter((r) => r.score.scorable && r.score.total >= 65 && r.trend?.state === "Recovering");
-  const callouts = tab === "watchlist" ? reports.filter((r) => r.trend?.state === "Downtrend" || r.score.redFlags.length > 0) : [];
-  const loadingCount = Math.max(0, symbols.length - reports.length - Object.keys(errors).filter((e) => symbols.includes(e)).length);
+  const liveReports = liveSymbols.map((s) => data[s]).filter((r): r is LongTermReport => !!r);
+  const liveRows: RadarRow[] = rank(
+    liveReports.map((r) => {
+      const row = toRow(r);
+      const weekly = snapBy.get(r.profile.symbol);
+      // Prefer the committed weekly history; fall back to what this browser saw last week.
+      const lastWeek = weekly && typeof weekly.delta === "number" ? weekly.score - weekly.delta : undefined;
+      return { ...row, delta: lastWeek !== undefined ? row.score - lastWeek : localDeltas[r.profile.symbol] };
+    }),
+  ).concat(liveReports.filter((r) => !r.score.scorable).map((r) => toRow(r)));
+
+  const radar = snapRows.filter((r) => r.score >= 80);
+  const q = filter.trim().toUpperCase();
+  const rankingRows = q ? snapRows.filter((r) => r.symbol.includes(q) || r.name.toUpperCase().includes(q) || (r.industry ?? "").toUpperCase().includes(q)) : snapRows;
+  const turningUp = snapRows.filter((r) => r.score >= 65 && r.trend === "Recovering").slice(0, 12);
+  const holdingsWarn = tab === "portfolio" ? liveRows.filter((r) => r.trend === "Downtrend" || r.flags.length > 0) : [];
+
+  const title =
+    tab === "radar" ? "On the Radar" : tab === "ranking" ? "Full ranking" : tab === "portfolio" ? "Portfolio holdings scores" : tab === "watchlist" ? "Watchlist" : "Discover";
+  const subtitle =
+    tab === "radar"
+      ? `All ${radar.length} scoring 80+ · ${snap?.universe ?? "S&P 500 + Nasdaq 100"}`
+      : tab === "ranking"
+        ? `${snapRows.length} scored · ${snap?.universe ?? ""}`
+        : `${liveRows.length} stocks · scored live`;
 
   return (
     <div className="stack">
-      <section className="panel">
+      {introHidden ? (
+        <div className="row between small">
+          <span className="muted">{meta?.demo ? "Demo mode: fictional sample companies." : ""}</span>
+          <button className="linkish" onClick={() => { setIntroHidden(false); try { localStorage.removeItem("scout:intro"); } catch {} }}>How does this work?</button>
+        </div>
+      ) : (
+      <section className="panel" style={{ position: "relative" }}>
+        <button className="linkish" style={{ position: "absolute", right: 14, top: 12 }} onClick={() => { setIntroHidden(true); try { localStorage.setItem("scout:intro", "hidden"); } catch {} }}>Hide</button>
         <Only mode="beginner">
           <h1>Is this a good company, at a fair price?</h1>
           <p className="muted">
-            Every company gets a score from 0 to 100 based on four questions: is the price fair, is it growing, is it a really good
-            business, and is it financially safe? Next to the score you&apos;ll see the <b>trend</b> — whether the stock price has been going up or down.
-            The two are kept separate on purpose: a great company can have a falling price, and that disagreement is often the most interesting part.
+            Every company gets a score from 0 to 100 from four questions: is the price fair, is it growing, is it a really good business, and is it
+            financially safe? Next to it is the <b>trend</b> — whether the stock price has been going up or down. They&apos;re kept apart on purpose: a great
+            company can have a falling price, and that disagreement is often the most interesting part.
           </p>
-          <p className="small muted">Tap any card to see every check explained. Hover underlined words like <Term id="pe" /> for a definition.</p>
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            <b>On the Radar</b> lists every big US company (S&amp;P 500 and Nasdaq 100) scoring 80 or more, updated every weekend. Tap a row to see every check
+            explained. Hover underlined words like <Term id="pe" /> for a definition.
+          </p>
         </Only>
         <Only mode="expert">
           <h1>Long-term scorecard</h1>
-          <p className="muted small">
-            0–100 fundamentals score (Value 25 · Growth 25 · Quality 30 · Health 20) with partial credit, own-history valuation, TTM-inclusive trends,
-            red-flag caps (59 / 39), F and CAPEX scorecards. Trend from the 200-DMA with 12-1 RS and industry momentum, never blended.
+          <p className="muted small" style={{ marginBottom: 0 }}>
+            0–100 fundamentals score (Value 25 · Growth 25 · Quality 30 · Health 20), partial credit, own-history valuation, TTM-inclusive trends, red-flag
+            caps (59 / 39), F and CAPEX scorecards. Trend from the 200-DMA with 12-1 RS and industry-peer momentum, never blended. Weekly universe scan with
+            week-over-week deltas.
           </p>
         </Only>
-        {meta?.demo && <div className="banner info small" style={{ marginTop: 8 }}>Demo mode: showing fictional sample companies with made-up numbers.</div>}
+        {meta?.demo && <div className="banner info small" style={{ marginTop: 8 }}>Demo mode: fictional sample companies with made-up numbers.</div>}
         {meta && !meta.demo && !meta.fmp && (
-          <p className="tiny faint" style={{ marginTop: 6 }}>Second data source off: add <code>FMP_API_KEY</code> to unlock the 10-year checks.</p>
+          <p className="tiny faint" style={{ marginTop: 6, marginBottom: 0 }}>
+            Second data source off: add <code>FMP_API_KEY</code> to unlock the 10-year checks.
+          </p>
         )}
       </section>
-
-      {turningUp.length > 0 && (
-        <section className="banner info">
-          <b>Turning up:</b>{" "}
-          {turningUp.map((r, i) => (
-            <span key={r.profile.symbol}>
-              {i > 0 && ", "}
-              <Link href={`/stock/${r.profile.symbol}`}>{r.profile.symbol}</Link> ({r.score.total})
-            </span>
-          ))}
-          <span className="muted small">
-            {" "}— {mode === "expert" ? "65+ score, just reclaimed the 200-day after months below." : "good companies whose price just started climbing again after a slump."}
-          </span>
-        </section>
-      )}
-      {callouts.length > 0 && (
-        <section className="banner warn small">
-          <b>Watch out:</b>{" "}
-          {callouts.map((r, i) => (
-            <span key={r.profile.symbol}>
-              {i > 0 && " · "}
-              <Link href={`/stock/${r.profile.symbol}`}>{r.profile.symbol}</Link>{" "}
-              {[r.trend?.state === "Downtrend" ? "downtrend" : "", r.score.redFlags.length ? `${r.score.redFlags.length} red flag${r.score.redFlags.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ")}
-            </span>
-          ))}
-        </section>
       )}
 
       <div className="row between">
-        {!meta?.demo && (
-          <div className="tabs">
-            {LISTS.map((l) => (
-              <button key={l.id} className={tab === l.id ? "on" : ""} onClick={() => setTab(l.id)}>
-                {l.label}
-              </button>
+        <div className="tabs">
+          {TABS.map((t) => (
+            <button key={t.id} className={tab === t.id ? "on" : ""} onClick={() => pickTab(t.id)}>
+              {t.label}
+              {t.id === "radar" && hasSnapshot ? ` · ${radar.length}` : ""}
+              {t.id === "portfolio" && pf.list.length ? ` · ${pf.list.length}` : ""}
+            </button>
+          ))}
+        </div>
+        {!snapshotTab && (
+          <div className="view-toggle" role="group" aria-label="View">
+            <button className={view === "table" ? "on" : ""} onClick={() => pickView("table")}>Table</button>
+            <button className={view === "cards" ? "on" : ""} onClick={() => pickView("cards")}>Cards</button>
+          </div>
+        )}
+      </div>
+
+      <section className="panel">
+        <div className="list-head">
+          <div>
+            <div className="tiny muted" style={{ letterSpacing: ".18em", textTransform: "uppercase" }}>Stock Scout</div>
+            <h2 style={{ fontSize: 26, marginBottom: 0 }}>{title}</h2>
+          </div>
+          <div className="meta">
+            {snapshotTab && snap?.date && <div className="num" style={{ fontWeight: 700 }}>{fmtDate(snap.date)}</div>}
+            <div className="small muted">{subtitle}</div>
+            {snapshotTab && snap?.previousDate && <div className="tiny faint">▲▼ vs {fmtDate(snap.previousDate)}</div>}
+          </div>
+        </div>
+
+        {/* Snapshot-backed lists */}
+        {snapshotTab && !snap && !snapErr && <div className="skeleton" style={{ height: 300 }} />}
+        {snapshotTab && snapErr && <p className="band-red small">Couldn&apos;t load the weekly list: {snapErr}</p>}
+        {snapshotTab && snap && !hasSnapshot && (
+          <div className="banner info small">
+            <b>The first weekly scan hasn&apos;t run yet.</b> It scores all ~515 S&amp;P 500 and Nasdaq-100 companies, which takes a while, so it runs
+            on a schedule instead of on page load. Trigger <i>Weekly scan</i> in the repo&apos;s GitHub Actions tab (runs every Sunday after that), or run{" "}
+            <code>npm run scan</code> locally and commit <code>src/data/snapshots</code>. Meanwhile, use <i>My portfolio</i>, <i>Watchlist</i> or{" "}
+            <i>Discover</i>, which score live.
+          </div>
+        )}
+        {tab === "radar" && hasSnapshot && (radar.length ? <RankTable rows={radar} /> : <p className="muted">Nothing scores 80+ this week.</p>)}
+        {tab === "ranking" && hasSnapshot && (
+          <>
+            <div className="row" style={{ marginBottom: 8 }}>
+              <input placeholder="Filter by ticker, name or industry" value={filter} onChange={(e) => (setFilter(e.target.value), setPage(0))} style={{ width: 280 }} />
+              <span className="small muted">
+                {rankingRows.length ? `${page * PAGE + 1}–${Math.min(rankingRows.length, (page + 1) * PAGE)} of ${rankingRows.length}` : "No matches"}
+              </span>
+              <button className="btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>← Prev</button>
+              <button className="btn" disabled={(page + 1) * PAGE >= rankingRows.length} onClick={() => setPage((p) => p + 1)}>Next →</button>
+            </div>
+            <RankTable rows={rankingRows.slice(page * PAGE, (page + 1) * PAGE)} startRank={q ? 1 : page * PAGE + 1} />
+          </>
+        )}
+        {snapshotTab && turningUp.length > 0 && (
+          <p className="small" style={{ marginTop: 12, marginBottom: 0 }}>
+            <b>Turning up</b>{" "}
+            <span className="muted">({mode === "expert" ? "65+, just reclaimed the 200-day" : "good companies whose price just started climbing again"}):</span>{" "}
+            {turningUp.map((r, i) => (
+              <span key={r.symbol}>
+                {i > 0 && ", "}
+                <Link href={`/stock/${r.symbol}`}>{r.symbol}</Link> <span className="faint num">{r.score}</span>
+              </span>
+            ))}
+          </p>
+        )}
+
+        {/* Live-scored lists */}
+        {tab === "portfolio" && pf.ready && pf.list.length === 0 && !meta?.demo && (
+          <div className="banner info small">
+            Add the stocks you own with &ldquo;Add to portfolio&rdquo; on any stock page — they&apos;ll be ranked here like a weekly holdings report.{" "}
+            <button className="linkish" onClick={() => pf.replace(TTT_PORTFOLIO)}>Or load The Traveling Trader&apos;s 19 holdings as an example.</button>
+          </div>
+        )}
+        {tab === "discover" && !meta?.demo && (
+          <div className="row" style={{ marginBottom: 10 }}>
+            <div className="tabs">
+              {SCREENS.map((s) => (
+                <button key={s.id} className={screenId === s.id ? "on" : ""} onClick={() => setScreenId(s.id)}>{s.label}</button>
+              ))}
+            </div>
+            <span className="tiny faint">Candidates from Yahoo&apos;s screen, scored here. {screenErr && <span className="band-red">Screen failed: {screenErr}</span>}</span>
+          </div>
+        )}
+        {holdingsWarn.length > 0 && (
+          <div className="banner warn small" style={{ marginBottom: 10 }}>
+            <b>Worth a look:</b>{" "}
+            {holdingsWarn.map((r, i) => (
+              <span key={r.symbol}>
+                {i > 0 && " · "}
+                <Link href={`/stock/${r.symbol}`}>{r.symbol}</Link>{" "}
+                {[r.trend === "Downtrend" ? "downtrend" : "", r.flags.length ? `${r.flags.length} red flag${r.flags.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ")}
+              </span>
             ))}
           </div>
         )}
-        <div className="row small">
-          <label className="row" style={{ gap: 6 }}>
-            <input type="checkbox" checked={radarOnly} onChange={(e) => setRadarOnly(e.target.checked)} /> On the radar (80+)
-          </label>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
-            <option value="score">Sort: score</option>
-            <option value="rs">Sort: relative strength</option>
-            <option value="symbol">Sort: A–Z</option>
-          </select>
-        </div>
-      </div>
-
-      {tab !== "watchlist" && !meta?.demo && (
-        <p className="tiny faint">
-          Candidates come from Yahoo&apos;s &ldquo;{LISTS.find((l) => l.id === tab)?.label}&rdquo; screen, then get scored here. {screenErr && <span className="band-red">Screen failed: {screenErr}</span>}
-        </p>
-      )}
-
-      <div className="grid cards">
-        {sorted.map((r) => (
-          <ScoreCardMini key={r.profile.symbol} r={r} delta={deltas[r.profile.symbol]} />
-        ))}
-        {pending > 0 && Array.from({ length: Math.min(loadingCount, 6) }, (_, i) => <SkeletonCard key={`sk${i}`} />)}
-      </div>
-
-      {Object.keys(errors).filter((s) => symbols.includes(s)).length > 0 && (
-        <details className="small muted">
-          <summary>{Object.keys(errors).filter((s) => symbols.includes(s)).length} couldn&apos;t load</summary>
-          {Object.entries(errors).filter(([s]) => symbols.includes(s)).map(([s, e]) => (
-            <div key={s}>
-              <b>{s}</b>: {e}
-            </div>
-          ))}
-        </details>
-      )}
-      {tab === "watchlist" && wl.ready && !meta?.demo && wl.list.length === 0 && (
-        <p className="muted">Your watchlist is empty. Search for a company above and press &ldquo;Add to watchlist&rdquo;.</p>
-      )}
+        {!snapshotTab && liveRows.length > 0 && view === "table" && <RankTable rows={liveRows} />}
+        {!snapshotTab && view === "cards" && (
+          <div className="grid cards">
+            {liveRows.map((row) => data[row.symbol] && <ScoreCardMini key={row.symbol} r={data[row.symbol]!} delta={row.delta ?? undefined} />)}
+            {pending > 0 && Array.from({ length: Math.min(pending, 6) }, (_, i) => <SkeletonCard key={`sk${i}`} />)}
+          </div>
+        )}
+        {!snapshotTab && view === "table" && pending > 0 && (
+          <p className="small muted" style={{ marginTop: 8 }}>Scoring {pending} more…</p>
+        )}
+        {!snapshotTab && Object.keys(errors).filter((s) => liveSymbols.includes(s)).length > 0 && (
+          <details className="small muted" style={{ marginTop: 8 }}>
+            <summary>{Object.keys(errors).filter((s) => liveSymbols.includes(s)).length} couldn&apos;t load</summary>
+            {Object.entries(errors)
+              .filter(([s]) => liveSymbols.includes(s))
+              .map(([s, e]) => (
+                <div key={s}>
+                  <b>{s}</b>: {e}
+                </div>
+              ))}
+          </details>
+        )}
+        {tab === "watchlist" && wl.ready && !meta?.demo && wl.list.length === 0 && (
+          <p className="muted">Your watchlist is empty. Search for a company above and press &ldquo;Add to watchlist&rdquo;.</p>
+        )}
+      </section>
       <Disclaimer />
     </div>
   );

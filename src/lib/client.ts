@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LongTermReport } from "./analyze";
 import type { ShortTermResult } from "./shortterm";
+import type { Snapshot } from "./snapshot";
 
 export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -67,16 +68,17 @@ function writeLS(key: string, v: unknown) {
   } catch {}
 }
 
-export function useWatchlist() {
+function useSymbolList(key: string, defaults: string[]) {
   const [list, setList] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    setList(readLS("scout:watchlist", DEFAULT_WATCHLIST));
+    setList(readLS(key, defaults));
     setReady(true);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
   const save = (l: string[]) => {
     setList(l);
-    writeLS("scout:watchlist", l);
+    writeLS(key, l);
   };
   return {
     list,
@@ -84,7 +86,28 @@ export function useWatchlist() {
     has: (s: string) => list.includes(s),
     add: (s: string) => !list.includes(s) && save([...list, s]),
     remove: (s: string) => save(list.filter((x) => x !== s)),
+    replace: (l: string[]) => save([...new Set(l.map((x) => x.toUpperCase()))]),
   };
+}
+
+export const useWatchlist = () => useSymbolList("scout:watchlist", DEFAULT_WATCHLIST);
+/** Stocks you actually own — ranked like TTT's "Portfolio Holdings Scores". */
+export const usePortfolio = () => useSymbolList("scout:portfolio", []);
+
+/* ── Weekly snapshot ── */
+
+let snapshotPromise: Promise<Snapshot> | undefined;
+export function useSnapshot() {
+  const [snap, setSnap] = useState<Snapshot>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    snapshotPromise ??= fetchJson<Snapshot>("/api/radar");
+    snapshotPromise.then(setSnap).catch((e) => {
+      snapshotPromise = undefined;
+      setError((e as Error).message);
+    });
+  }, []);
+  return { snap, error };
 }
 
 /**
