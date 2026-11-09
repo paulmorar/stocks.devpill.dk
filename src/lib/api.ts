@@ -7,10 +7,14 @@ export function cleanSymbol(raw: string | null | undefined) {
   return SYMBOL_RE.test(s) ? s : undefined;
 }
 
-/** JSON with CDN caching: browsers revalidate, Vercel's edge serves stale while refreshing. */
-export function json(body: unknown, sMaxAge: number) {
+/**
+ * JSON for signed-in users only, so it must never sit in a shared (CDN) cache:
+ * `private` keeps it in the viewer's browser. Repeat work is still avoided by
+ * the server-side cache in lib/data/cache.ts.
+ */
+export function json(body: unknown, maxAge: number) {
   return NextResponse.json(body, {
-    headers: { "Cache-Control": `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=${sMaxAge * 4}` },
+    headers: { "Cache-Control": `private, max-age=${Math.min(maxAge, 300)}` },
   });
 }
 

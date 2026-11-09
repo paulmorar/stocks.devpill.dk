@@ -7,6 +7,11 @@ import type { Snapshot } from "./snapshot";
 
 export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
+  if (res.status === 401 && typeof window !== "undefined") {
+    // Session expired or revoked: back to the login page, then return here.
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    throw new Error("Signed out");
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
   return body as T;

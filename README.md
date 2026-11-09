@@ -22,16 +22,41 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # 50 unit tests: scoring, trend, splits, merging, snapshots, day-trading signals
+npm test          # 57 unit tests: scoring, trend, splits, merging, snapshots, day-trading signals, auth
 npm run typecheck
 npm run build
 ```
 
+## Login
+
+The whole app (pages and API) sits behind a login gate (`src/proxy.ts`), so strangers can't use it or burn your Yahoo/FMP access. No database: sessions are signed cookies (30 days), and every request re-checks them against the current env vars.
+
+**GitHub SSO + email allowlist (main way in)**
+1. GitHub → Settings → Developer settings → OAuth Apps → New. Homepage `https://<your-domain>`, callback `https://<your-domain>/api/auth/github/callback`.
+2. In Vercel → Project → Settings → Environment Variables (Production): `AUTH_SECRET` (`npm run auth -- secret`), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `AUTH_ALLOWED_EMAILS=you@example.com,partner@example.com`.
+3. Redeploy: Vercel only applies env changes to new deployments.
+
+Sign-in only asks GitHub for the account's email addresses (`user:email` scope). The callback checks the *verified* ones against `AUTH_ALLOWED_EMAILS` on the server, then discards the GitHub token. Removing an email from the list (and redeploying) logs that person out everywhere.
+
+**Password fallback (optional)** for someone without a GitHub account: `npm run auth -- user anna` prompts for a password and prints an `AUTH_USERS` entry (scrypt hash). The login page shows whichever methods are configured. Leave `AUTH_USERS` empty to make GitHub the only way in.
+
+**Behaviour**
+- Production with nothing configured → every request gets 503 (fails closed, never public by accident). Local `npm run dev` stays open.
+- Expired or revoked session → API returns 401 and the UI sends you back to the login page.
+- Rotate `AUTH_SECRET` to log everyone out.
+- API responses are `Cache-Control: private`, so nothing user-only lands in Vercel's shared CDN cache. Server-side caching still avoids repeat Yahoo calls.
+- `robots.txt` and meta tags ask search engines not to index the app.
+
+**Extra hardening in the Vercel dashboard (free)**
+- Firewall → add one rate-limit rule (Hobby allows one): path starts with `/api/`, 60 requests / 60 s per IP, action Deny. It also covers repeated password guesses against `/api/auth/login`, on top of the app's own 8-failures-per-15-minutes lockout.
+- Bot Management → Attack Mode during an actual attack; challenged traffic isn't billed.
+- GitHub OAuth callbacks only work on the domain you registered, so preview deployments can't do GitHub sign-in. Use the password fallback there, or keep previews behind Vercel's own Deployment Protection (on by default for previews).
+
 ## Deploy to Vercel
 
 1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 22+).
-2. Optional env var `FMP_API_KEY`.
-3. Deploy. API responses carry `s-maxage` headers, so Vercel's CDN absorbs repeat requests (scores 30 min, day-trading data 60 s).
+2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY`.
+3. Deploy.
 
 ## Weekly scan (On the Radar)
 
@@ -89,6 +114,8 @@ src/lib/shortterm.ts day-trading indicators, setups, position sizing
 src/lib/snapshot.ts  weekly snapshot format, deltas, ranking, industry-peer momentum
 src/data/            universe.json, snapshots/, ttt-reference.ts
 scripts/             scan.ts, update-universe.ts, calibrate.ts
-src/app/api/         score/[symbol], short/[symbol], radar, screen, search, meta
+src/app/api/         score/[symbol], short/[symbol], radar, screen, search, meta, auth/{login,logout,github}
+src/lib/auth/        session.ts (signed cookies, allowlist), password.ts (scrypt), github.ts (OAuth)
+src/proxy.ts         login gate in front of every page and API route
 src/app/             / (long-term), /stock/[symbol], /day, /learn
 ```

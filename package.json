@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "scan": "NODE_OPTIONS=--conditions=react-server tsx scripts/scan.ts",
     "universe": "tsx scripts/update-universe.ts",
-    "calibrate": "NODE_OPTIONS=--conditions=react-server tsx scripts/calibrate.ts"
+    "calibrate": "NODE_OPTIONS=--conditions=react-server tsx scripts/calibrate.ts",
+    "auth": "tsx scripts/auth.ts"
   },
   "license": "UNLICENSED",
   "dependencies": {

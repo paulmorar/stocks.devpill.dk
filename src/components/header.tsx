@@ -64,8 +64,19 @@ function SearchBox() {
   );
 }
 
-export function Header() {
+export function Header({ authOn = false }: { authOn?: boolean }) {
   const path = usePathname();
+  if (path === "/login") {
+    return (
+      <header className="header">
+        <div className="wrap">
+          <span className="brand">
+            <span aria-hidden>🚀</span> Stock Scout
+          </span>
+        </div>
+      </header>
+    );
+  }
   const nav = [
     { href: "/", label: "Long-term" },
     { href: "/day", label: "Day trading" },
@@ -87,6 +98,11 @@ export function Header() {
         <div className="spacer" />
         <SearchBox />
         <ModeToggle />
+        {authOn && (
+          <form method="post" action="/api/auth/logout">
+            <button className="linkish" type="submit" title="Sign out">Sign out</button>
+          </form>
+        )}
       </div>
     </header>
   );
