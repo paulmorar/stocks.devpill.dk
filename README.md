@@ -13,8 +13,10 @@ Every number is explained twice. Use the **Beginner / Expert** switch in the hea
 
 ## Run it
 
+Use Node.js 24.x. The same major version is used locally, in GitHub Actions, and on Vercel.
+
 ```bash
-npm install
+npm ci
 cp .env.example .env.local   # optional: add FMP_API_KEY
 npm run dev                  # http://localhost:3000
 ```
@@ -54,9 +56,14 @@ Sign-in only asks GitHub for the account's email addresses (`user:email` scope).
 
 ## Deploy to Vercel
 
-1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 22+).
+1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 24.x, pinned in `package.json`).
 2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY`.
 3. Deploy.
+
+The `allowScripts` entry in `package.json` approves only the pinned esbuild version's
+binary setup script. After upgrading esbuild, review its install script and run
+`npm install-scripts approve esbuild --allow-scripts-pin` with a current npm version
+to update that approval. Do not blanket-approve dependency install scripts.
 
 ## Weekly scan (On the Radar)
 
