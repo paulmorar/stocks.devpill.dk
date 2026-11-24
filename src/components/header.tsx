@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { fetchJson, usePortfolio, useRecent, useWatchlist } from "@/lib/client";
+import { fetchJson, useRecent } from "@/lib/client";
 import { isSearchShortcut, latestGate, moveHighlight } from "@/lib/search";
+import { usePortfolio, useWatchlist } from "./lists";
 import { ModeToggle } from "./mode";
 
 type Hit = { symbol: string; name: string; exchange: string; type: string };
@@ -138,6 +139,8 @@ function SearchBox() {
           {items.map((it, i) => {
             const watching = wl.has(it.symbol);
             const owned = pf.has(it.symbol);
+            const savingW = wl.saving(it.symbol);
+            const savingP = pf.saving(it.symbol);
             return (
               <div key={it.symbol} className={`result${i === hl ? " hl" : ""}`} onMouseEnter={() => setHl(i)}>
                 <button className="open" onClick={() => go(it.symbol)}>
@@ -149,17 +152,19 @@ function SearchBox() {
                   className={`act${watching ? " on" : ""}`}
                   aria-pressed={watching}
                   aria-label={`${watching ? "Remove" : "Add"} ${it.symbol} ${watching ? "from" : "to"} watchlist`}
+                  disabled={!wl.ready || savingW}
                   onClick={() => (watching ? wl.remove(it.symbol) : wl.add(it.symbol))}
                 >
-                  {watching ? "✓ Watching" : "+ Watch"}
+                  {savingW ? "Saving…" : watching ? "✓ Watching" : "+ Watch"}
                 </button>
                 <button
                   className={`act${owned ? " on" : ""}`}
                   aria-pressed={owned}
                   aria-label={`${owned ? "Remove" : "Add"} ${it.symbol} ${owned ? "from" : "to"} portfolio`}
+                  disabled={!pf.ready || savingP}
                   onClick={() => (owned ? pf.remove(it.symbol) : pf.add(it.symbol))}
                 >
-                  {owned ? "✓ Portfolio" : "+ Portfolio"}
+                  {savingP ? "Saving…" : owned ? "✓ Portfolio" : "+ Portfolio"}
                 </button>
               </div>
             );

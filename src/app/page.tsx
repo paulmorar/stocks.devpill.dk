@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson, getReport, scoreDelta, useMany, usePortfolio, useSnapshot, useWatchlist } from "@/lib/client";
+import { fetchJson, getReport, scoreDelta, useMany, useSnapshot } from "@/lib/client";
 import type { LongTermReport } from "@/lib/analyze";
 import { applyFilters, availableUniverses, DEFAULT_FILTERS, filtersToParams, type Filters, inUniverse, overview, parseFilters, UNIVERSES } from "@/lib/explore";
 import { COMPANY_CACHE_HOURS } from "@/lib/freshness";
@@ -10,12 +10,14 @@ import { rank, type RadarRow, toRow } from "@/lib/snapshot";
 import { TTT_PORTFOLIO } from "@/data/ttt-reference";
 import { RankingFilters, SectorTiles, UniverseSwitch } from "@/components/explore";
 import { SnapshotAge } from "@/components/freshness";
+import { ListsSync, NamedLists, useLists, usePortfolio, useWatchlist } from "@/components/lists";
 import { Only, useMode } from "@/components/mode";
+import { ListNews } from "@/components/news";
 import { RankTable } from "@/components/rank-table";
 import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
 
 type Meta = { demo: boolean; fmp: boolean; demoSymbols: string[] };
-type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "discover";
+type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "lists" | "discover";
 type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "portfolio_anchors" | "undervalued_growth_stocks";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -23,6 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "ranking", label: "Full ranking" },
   { id: "portfolio", label: "My portfolio" },
   { id: "watchlist", label: "Watchlist" },
+  { id: "lists", label: "My lists" },
   { id: "discover", label: "Discover" },
 ];
 const SCREENS: { id: ScreenId; label: string }[] = [
@@ -40,6 +43,7 @@ export default function Home() {
   const { mode } = useMode();
   const wl = useWatchlist();
   const pf = usePortfolio();
+  const lists = useLists();
   const { snap, error: snapErr } = useSnapshot();
   const [meta, setMeta] = useState<Meta>();
   const [tab, setTab] = useState<Tab>("radar");
@@ -49,14 +53,18 @@ export default function Home() {
   const [view, setView] = useState<"table" | "cards">("table");
   const [page, setPage] = useState(0);
   const [filters, setFiltersState] = useState<Filters>(DEFAULT_FILTERS);
+  const [listId, setListId] = useState<string>();
   const [urlRead, setUrlRead] = useState(false);
   const [introHidden, setIntroHidden] = useState(false);
+  const named = lists.doc.lists.filter((l) => l.kind === "custom");
+  const selectedList = named.find((l) => l.id === listId) ?? named[0];
 
   useEffect(() => {
     fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, demoSymbols: [] }));
     // A shared or reopened URL wins over the tab remembered in this browser.
     const params = new URLSearchParams(window.location.search);
     setFiltersState(parseFilters(params));
+    setListId(params.get("list") ?? undefined);
     try {
       const t = params.get("tab") ?? localStorage.getItem("scout:tab");
       if (TABS.some((x) => x.id === t)) setTab(t as Tab);
@@ -73,10 +81,12 @@ export default function Home() {
     const params = filtersToParams(filters, new URLSearchParams(window.location.search));
     if (tab === "radar") params.delete("tab");
     else params.set("tab", tab);
+    if (tab === "lists" && selectedList) params.set("list", selectedList.id);
+    else params.delete("list");
     const qs = params.toString();
     const next = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
     if (next !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", next);
-  }, [tab, filters, urlRead]);
+  }, [tab, filters, urlRead, selectedList]);
 
   const setFilters = (f: Filters) => {
     setFiltersState(f);
@@ -123,8 +133,9 @@ export default function Home() {
     if (meta.demo) return meta.demoSymbols;
     if (tab === "portfolio") return pf.ready ? pf.list : [];
     if (tab === "watchlist") return wl.ready ? wl.list : [];
+    if (tab === "lists") return selectedList?.symbols ?? [];
     return screen;
-  }, [meta, snapshotTab, tab, pf.ready, pf.list, wl.ready, wl.list, screen]);
+  }, [meta, snapshotTab, tab, pf.ready, pf.list, wl.ready, wl.list, selectedList, screen]);
   const { data, errors, pending } = useMany<LongTermReport>(liveSymbols, getReport, 3);
 
   const [localDeltas, setLocalDeltas] = useState<Record<string, number | undefined>>({});
@@ -150,7 +161,12 @@ export default function Home() {
   const holdingsWarn = tab === "portfolio" ? liveRows.filter((r) => r.trend === "Downtrend" || r.flags.length > 0) : [];
 
   const title =
-    tab === "radar" ? "On the Radar" : tab === "ranking" ? "Full ranking" : tab === "portfolio" ? "Portfolio holdings scores" : tab === "watchlist" ? "Watchlist" : "Discover";
+    tab === "radar" ? "On the Radar"
+    : tab === "ranking" ? "Full ranking"
+    : tab === "portfolio" ? "Portfolio holdings scores"
+    : tab === "watchlist" ? "Watchlist"
+    : tab === "lists" ? (selectedList?.name ?? "My lists")
+    : "Discover";
   const subtitle =
     snapshotTab && !snap
       ? "Loading the weekly ranking…"
@@ -158,7 +174,9 @@ export default function Home() {
         ? `All ${radar.length} scoring 80+ · ${universeLabel}`
         : tab === "ranking"
           ? `${rankingRows.length} of ${universeRows.length} ranked · ${universeLabel}`
-          : `${liveRows.length} stocks · scored live`;
+          : tab === "lists" && !selectedList
+            ? "No named lists yet"
+            : `${liveRows.length} stocks · scored live`;
 
   return (
     <div className="stack">
@@ -281,10 +299,25 @@ export default function Home() {
         )}
 
         {/* Live-scored lists */}
+        {(tab === "portfolio" || tab === "watchlist" || tab === "lists") && <ListsSync />}
+        {tab === "lists" && (
+          <>
+            <NamedLists selected={selectedList} onSelect={(id) => (setListId(id), setPage(0))} />
+            {lists.ready && !selectedList && (
+              <p className="muted small">
+                Named lists group stocks the way you research them, for example &ldquo;Quality at a fair price&rdquo; or &ldquo;Earnings this month&rdquo;.
+                Create one above, then use the <b>Lists</b> button on any stock page to add stocks.
+              </p>
+            )}
+            {selectedList && selectedList.symbols.length === 0 && !meta?.demo && (
+              <p className="muted small">This list is empty. Use the <b>Lists</b> button on any stock page to add stocks.</p>
+            )}
+          </>
+        )}
         {tab === "portfolio" && pf.ready && pf.list.length === 0 && !meta?.demo && (
           <div className="banner info small">
-            Add the stocks you own with &ldquo;Add to portfolio&rdquo; on any stock page — they&apos;ll be ranked here like a weekly holdings report.{" "}
-            <button className="linkish" onClick={() => pf.replace(TTT_PORTFOLIO)}>Or load The Traveling Trader&apos;s 19 holdings as an example.</button>
+            Add the stocks you own with &ldquo;Add to portfolio&rdquo; on any stock page. They are ranked here like a weekly holdings report.{" "}
+            <button className="linkish" onClick={() => pf.addMany(TTT_PORTFOLIO)}>Or load The Traveling Trader&apos;s 19 holdings as an example.</button>
           </div>
         )}
         {tab === "discover" && !meta?.demo && (
@@ -333,6 +366,13 @@ export default function Home() {
         )}
         {tab === "watchlist" && wl.ready && !meta?.demo && wl.list.length === 0 && (
           <p className="muted">Your watchlist is empty. Search for a company above and press &ldquo;Add to watchlist&rdquo;.</p>
+        )}
+        {(tab === "portfolio" || tab === "watchlist" || tab === "lists") && meta && !meta.demo && (
+          <ListNews
+            key={`${tab}:${selectedList?.id ?? ""}`}
+            symbols={liveSymbols}
+            name={tab === "portfolio" ? "your portfolio" : tab === "watchlist" ? "your watchlist" : (selectedList?.name ?? "this list")}
+          />
         )}
       </section>
       <Disclaimer />

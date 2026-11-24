@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-
-export const SYMBOL_RE = /^[A-Z0-9.\-^=]{1,15}$/;
+import { SYMBOL_RE } from "./util";
 
 export function cleanSymbol(raw: string | null | undefined) {
   const s = decodeURIComponent(raw ?? "").trim().toUpperCase();

@@ -190,3 +190,9 @@ export async function yahooSearch(query: string) {
       type: String(q.quoteType),
     }));
 }
+
+/** Raw news entries Yahoo's search returns for a ticker; news-map.ts keeps the ones tagged with it. */
+export async function yahooNews(symbol: string) {
+  const res = await yf.search(symbol, { quotesCount: 0, newsCount: 12, enableFuzzyQuery: false });
+  return res.news ?? [];
+}

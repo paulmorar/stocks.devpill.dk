@@ -38,4 +38,5 @@ export const TTL = {
   intraday: 60,
   screener: 60 * 5,
   filings: 60 * 60 * 12,
+  news: 60 * 15,
 } as const;
