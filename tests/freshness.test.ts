@@ -46,6 +46,15 @@ describe("data freshness panel", () => {
     expect(html).toContain("4 annual reports, FY");
   });
 
+  it("mentions the trailing 12 months only when they reach past the last annual report", () => {
+    const r = report();
+    const last = r.annual.at(-1)!;
+    const after = (days: number) => new Date(Date.parse(last.date) + days * 86_400_000).toISOString().slice(0, 10);
+    const panel = (ttmDate: string) => renderToStaticMarkup(createElement(DataFreshness, { r: { ...r, ttm: { ...last, date: ttmDate } }, now: monday }));
+    expect(panel(after(3))).not.toContain("trailing 12 months");
+    expect(panel(after(182))).toContain("plus the trailing 12 months to");
+  });
+
   it("separates the weekly score and rank from a different live score", () => {
     const r = report();
     const row = { ...toRow(r), score: r.score.total - 3 };

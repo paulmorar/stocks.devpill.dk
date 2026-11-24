@@ -18,7 +18,7 @@ import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
 
 type Meta = { demo: boolean; fmp: boolean; demoSymbols: string[] };
 type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "lists" | "discover";
-type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "portfolio_anchors" | "undervalued_growth_stocks";
+type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "aggressive_small_caps" | "undervalued_growth_stocks";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "radar", label: "On the Radar" },
@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
 const SCREENS: { id: ScreenId; label: string }[] = [
   { id: "undervalued_large_caps", label: "Undervalued large caps" },
   { id: "growth_technology_stocks", label: "Growth tech" },
-  { id: "portfolio_anchors", label: "Portfolio anchors" },
+  { id: "aggressive_small_caps", label: "Small-cap growth" },
   { id: "undervalued_growth_stocks", label: "Undervalued growth" },
 ];
 const PAGE = 50;
@@ -108,11 +108,16 @@ export default function Home() {
 
   useEffect(() => {
     if (tab !== "discover" || meta?.demo) return;
+    let current = true;
     setScreen([]);
     setScreenErr(undefined);
     fetchJson<{ symbol: string }[]>(`/api/screen?id=${screenId}&count=25`)
-      .then((h) => setScreen(h.map((x) => x.symbol)))
-      .catch((e) => setScreenErr(e.message));
+      .then((h) => current && setScreen(h.map((x) => x.symbol)))
+      .catch((e) => current && setScreenErr(e.message));
+    // A slower reply for a screen chosen earlier must not replace this one.
+    return () => {
+      current = false;
+    };
   }, [tab, screenId, meta?.demo]);
 
   const snapshotTab = tab === "radar" || tab === "ranking";

@@ -6,6 +6,7 @@ import type { LongTermReport } from "@/lib/analyze";
 import { getReport, scoreDelta, useRecent, useSnapshot } from "@/lib/client";
 import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
 import { pushRecent } from "@/lib/search";
+import { newerTtm } from "@/lib/scoring/metrics";
 import { TREND_ICON } from "@/lib/trend";
 import { currencyUnit, fx, money, pct, signedPct } from "@/lib/util";
 import { FilingsPanel } from "@/components/filings";
@@ -296,6 +297,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
 
 function FinancialTable({ r }: { r: LongTermReport }) {
   const rows = [...r.annual].slice(-10);
+  // Same rule as the score: a TTM that ends with the last fiscal year would only repeat that column.
+  const ttm = newerTtm(r.annual.at(-1), r.ttm);
   const cur = r.profile.currency;
   const quoted = r.profile.tradingCurrency ?? cur;
   const unit = currencyUnit(quoted);
@@ -322,7 +325,7 @@ function FinancialTable({ r }: { r: LongTermReport }) {
             {rows.map((x) => (
               <th key={x.fy} className="num">{x.fy}</th>
             ))}
-            {r.ttm && <th className="num">TTM</th>}
+            {ttm && <th className="num">TTM</th>}
           </tr>
         </thead>
         <tbody>
@@ -332,7 +335,7 @@ function FinancialTable({ r }: { r: LongTermReport }) {
               {rows.map((x) => (
                 <td key={x.fy} className="num">{c.get(x)}</td>
               ))}
-              {r.ttm && <td className="num">{c.label === "Debt" || c.label === "Equity" ? "—" : c.get(r.ttm)}</td>}
+              {ttm && <td className="num">{c.label === "Debt" || c.label === "Equity" ? "—" : c.get(ttm)}</td>}
             </tr>
           ))}
         </tbody>

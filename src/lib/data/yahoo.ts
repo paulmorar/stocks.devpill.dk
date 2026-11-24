@@ -164,7 +164,6 @@ export type ScreenId =
   | "undervalued_large_caps"
   | "undervalued_growth_stocks"
   | "growth_technology_stocks"
-  | "portfolio_anchors"
   | "aggressive_small_caps"
   | "small_cap_gainers";
 
