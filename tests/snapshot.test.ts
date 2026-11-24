@@ -59,6 +59,11 @@ describe("reference data", () => {
       expect(r.h).toBeLessThanOrEqual(20);
     }
   });
+  it("reads each tag whole, so DVN's red flag doesn't mark it as a financial", () => {
+    const tags = (s: string) => TTT_REFERENCE.find((r) => r.symbol === s);
+    expect(tags("DVN")).toMatchObject({ f: false, capex: false, flag: true });
+    expect(tags("ERIE")).toMatchObject({ f: true, capex: true, flag: false });
+  });
   it("universe covers the S&P 500 plus Nasdaq-100 extras, with Yahoo-style symbols", () => {
     const syms = universe.members.map((m) => m.symbol);
     expect(syms.length).toBeGreaterThan(500);

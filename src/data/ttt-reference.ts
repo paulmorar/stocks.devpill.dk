@@ -74,10 +74,13 @@ const portfolio: Row[] = [
   ["OXY", "Occidental Petroleum", 54, 0, 21, 10, 8, 15, "Weakening", 33, -11],
 ];
 
-const toRef = (list: TttRef["list"]) => ([symbol, name, score, delta, v, g, q, h, trend, rs, ind, tags = ""]: Row): TttRef => ({
-  symbol, name, score, delta, v, g, q, h, trend, rs: rs / 100, ind: ind / 100,
-  f: tags.includes("f"), capex: tags.includes("capex"), flag: tags.includes("flag"), list,
-});
+const toRef = (list: TttRef["list"]) => ([symbol, name, score, delta, v, g, q, h, trend, rs, ind, tags = ""]: Row): TttRef => {
+  const tag = tags.split(",");
+  return {
+    symbol, name, score, delta, v, g, q, h, trend, rs: rs / 100, ind: ind / 100,
+    f: tag.includes("f"), capex: tag.includes("capex"), flag: tag.includes("flag"), list,
+  };
+};
 
 export const TTT_REFERENCE: TttRef[] = [...radar.map(toRef("radar")), ...portfolio.map(toRef("portfolio"))];
 
