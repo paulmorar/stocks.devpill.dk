@@ -67,7 +67,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       rule: "0 pts at −5%, full at +15% or better",
       run: () => {
         // Estimates are in the trading currency; the reported EPS fallback is converted to match.
-        const t = c.market.trailingEps ?? (isNum(lf?.eps) && isNum(m.fxNow) ? lf.eps / m.fxNow : undefined);
+        const eps = m.latest((r) => isNum(r.eps))?.eps;
+        const t = c.market.trailingEps ?? (isNum(eps) && isNum(m.fxNow) ? eps / m.fxNow : undefined);
         const f = c.market.forwardEps;
         if (!isNum(t) || t <= 0) return skip("No positive trailing EPS");
         if (!isNum(f)) return skip("No forward EPS estimate");
@@ -84,7 +85,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "fcf_yield", pillar: "value", label: "Free-cash-flow yield",
       rule: "0 pts at 1%, full at 6% or higher",
       run: () => {
-        const fcf = lf ? strictFcf(lf) : undefined;
+        const row = m.latest((r) => isNum(strictFcf(r)));
+        const fcf = row ? strictFcf(row) : undefined;
         if (!isNum(fcf)) return skip("No free cash flow");
         if (!isNum(m.marketCap) || m.marketCap <= 0) return skip("No market cap");
         const y = fcf / m.marketCap;
@@ -140,8 +142,9 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "roic", pillar: "quality", label: "Return on invested capital",
       rule: "0 pts at 5%, full at 20% or higher",
       run: () => {
-        if (!lf || !bal) return skip("No statements");
-        const v = roic(lf, bal);
+        const row = m.latest((r) => isNum(r.operatingIncome)) ?? lf;
+        if (!row || !bal) return skip("No statements");
+        const v = roic(row, bal);
         if (!isNum(v)) return skip("Missing operating income or capital");
         return {
           score: scale(v, 0.05, 0.2),
@@ -176,7 +179,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "cash_conversion", pillar: "quality", label: m.capexMode ? "Cash conversion (maintenance basis)" : "Cash conversion",
       rule: "0 pts at 50% of profit, full at 100%+",
       run: () => {
-        const recent = flows.slice(-3);
+        // A TTM row without profit or cash-flow figures is left out, so the window is the last three annual reports.
+        const recent = (lf && isNum(lf.netIncome) && isNum(cashOf(lf)) ? flows : m.annual).slice(-3);
         const ni = recent.reduce((a, r) => a + (r.netIncome ?? 0), 0);
         const cash = recent.map(cashOf);
         if (cash.some((v) => !isNum(v))) return skip("Missing cash-flow data");
@@ -215,7 +219,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
         if (!bal) return skip("No balance sheet");
         const debt = bal.totalDebt ?? 0;
         const eq = bal.equity;
-        const ebitda = lf?.ebitda ?? (isNum(lf?.operatingIncome) && isNum(lf?.da) ? (lf?.operatingIncome as number) + (lf?.da as number) : undefined);
+        const er = m.latest((r) => isNum(r.ebitda) || (isNum(r.operatingIncome) && isNum(r.da))) ?? lf;
+        const ebitda = er?.ebitda ?? (isNum(er?.operatingIncome) && isNum(er?.da) ? (er?.operatingIncome as number) + (er?.da as number) : undefined);
         const shares = series(m.annual, (r) => r.dilutedShares);
         const shrank = shares.length >= 2 && (shares.at(-1)!.v / shares[Math.max(0, shares.length - 6)]!.v) < 0.95;
         const de = isNum(eq) && eq > 0 ? debt / eq : undefined;
@@ -242,7 +247,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
         if (m.capexMode) {
           const recent = m.annual.slice(-3);
           const debtRose = recent.length >= 2 && (recent.at(-1)!.totalDebt ?? 0) > (recent[0]!.totalDebt ?? 0) * 1.15;
-          const negFcf = lf && (strictFcf(lf) ?? 0) < 0;
+          const fr = m.latest((r) => isNum(strictFcf(r)));
+          const negFcf = fr && (strictFcf(fr) ?? 0) < 0;
           if (debtRose && negFcf) {
             out.score = Math.min(out.score, 0.5);
             out.expert += " Capped at half credit: debt is rising while strict free cash flow is negative (borrowing to build).";
@@ -274,12 +280,13 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "interest_coverage", pillar: "health", label: "Interest coverage",
       rule: "0 pts at 2×, full at 15×",
       run: () => {
-        const ebit = lf?.operatingIncome;
-        const int = lf?.interestExpense;
+        const row = m.latest((r) => isNum(r.operatingIncome) && isNum(r.interestExpense)) ?? lf;
+        const ebit = row?.operatingIncome;
+        const int = row?.interestExpense;
         if (!isNum(ebit)) return skip("No operating income");
         if (!isNum(int) || int <= 0) {
           const debt = bal?.totalDebt ?? 0;
-          if (debt <= 0 || (isNum(lf?.revenue) && debt < (lf?.revenue as number) * 0.05)) {
+          if (debt <= 0 || (isNum(row?.revenue) && debt < (row?.revenue as number) * 0.05)) {
             return { score: 1, display: "no meaningful interest", expert: "No material interest expense.", simple: `${name} pays little or no interest on debt, so this is no worry.` };
           }
           return skip("Interest expense not reported");

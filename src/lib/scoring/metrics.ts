@@ -13,6 +13,12 @@ export interface Metrics {
   flows: PeriodRow[];
   /** Newest flow row (TTM or last annual). */
   latestFlow?: PeriodRow;
+  /**
+   * The newest flow row with what a check needs: the TTM row, or the last annual report when the TTM row lacks it.
+   * Yahoo's TTM rows sometimes miss a value the annual report has (most often interest expense). Ratios take both
+   * values from the row this returns, so they never mix periods.
+   */
+  latest: (has: (r: PeriodRow) => boolean) => PeriodRow | undefined;
   /** Newest balance-sheet row (TTM rarely has one, so this is usually the last annual). */
   latestBalance?: PeriodRow;
   /** Share price in the trading currency's main unit (pounds, not pence), like Yahoo's per-share estimates. */
@@ -36,6 +42,7 @@ export function buildMetrics(c: CompanyData): Metrics {
     if (!last || fy - last.fy > 0.2) flows.push({ ...c.ttm, fy });
   }
   const latestFlow = flows.at(-1);
+  const newest = latestFlow !== last ? [latestFlow, last] : [latestFlow];
   const latestBalance = [...annual].reverse().find((r) => isNum(r.equity) || isNum(r.totalAssets)) ?? last;
 
   // CAPEX mode: spending more than 2x depreciation in the latest period.
@@ -52,6 +59,7 @@ export function buildMetrics(c: CompanyData): Metrics {
     annual,
     flows,
     latestFlow,
+    latest: (has) => newest.find((r): r is PeriodRow => !!r && has(r)),
     latestBalance,
     price: isNum(price) ? price / perMain : undefined,
     marketCap: isNum(c.market.marketCap) && isNum(fxNow) ? c.market.marketCap * fxNow : undefined,
@@ -140,7 +148,7 @@ export function peHistory(m: Metrics, years = 5) {
 /** Yahoo's trailing EPS is in the trading currency, like `m.price`; the reported EPS needs the price in the reporting currency. */
 export function currentPE(c: CompanyData, m: Metrics) {
   const quoted = c.market.trailingEps !== undefined;
-  const eps = quoted ? c.market.trailingEps : m.latestFlow?.eps;
+  const eps = quoted ? c.market.trailingEps : m.latest((r) => isNum(r.eps))?.eps;
   const price = quoted ? m.price : isNum(m.price) && isNum(m.fxNow) ? m.price * m.fxNow : undefined;
   if (isNum(price) && isNum(eps) && eps > 0) return price / eps;
   if (isNum(c.market.trailingPE) && c.market.trailingPE > 0) return c.market.trailingPE;
