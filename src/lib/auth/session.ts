@@ -77,6 +77,9 @@ export function parseAllowlist(raw = process.env.AUTH_ALLOWED_EMAILS ?? ""): Set
 export const githubConfigured = (env = process.env) =>
   !!env.GITHUB_CLIENT_ID && !!env.GITHUB_CLIENT_SECRET && parseAllowlist(env.AUTH_ALLOWED_EMAILS).size > 0;
 
+/** Stable id for data saved per person. A GitHub email and a password username never share one, even if they match. */
+export const ownerId = (s: Session) => `${s.v === GITHUB_SESSION ? "gh" : "pw"}:${s.u}`;
+
 export async function verifySession(
   token: string | undefined,
   secret: string,

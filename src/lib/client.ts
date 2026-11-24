@@ -5,8 +5,8 @@ import type { LongTermReport } from "./analyze";
 import type { ShortTermResult } from "./shortterm";
 import type { Snapshot } from "./snapshot";
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (res.status === 401 && typeof window !== "undefined") {
     // Session expired or revoked: back to the login page, then return here.
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
@@ -55,9 +55,8 @@ export function useMany<T>(symbols: string[], load: (s: string) => Promise<T>, c
   return { data, errors, pending };
 }
 
-/* ── Local storage: watchlist and "last seen" scores (for the weekly-change arrow) ── */
-
-const DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "V", "JPM", "COST", "NOVO-B.CO"];
+/* ── Local storage: recently viewed stocks and "last seen" scores (for the weekly-change arrow) ──
+   Watchlist, portfolio and named lists live in components/lists.tsx. */
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -117,10 +116,7 @@ function useSymbolList(key: string, defaults: string[]) {
   };
 }
 
-export const useWatchlist = () => useSymbolList("scout:watchlist", DEFAULT_WATCHLIST);
-/** Stocks you actually own — ranked like TTT's "Portfolio Holdings Scores". */
-export const usePortfolio = () => useSymbolList("scout:portfolio", []);
-/** Stock pages opened recently in this browser, newest first. */
+/** Stock pages opened recently in this browser, newest first. Never sent to the server. */
 export const useRecent = () => useSymbolList("scout:recent", []);
 
 /* ── Weekly snapshot ── */

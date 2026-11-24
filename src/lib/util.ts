@@ -91,3 +91,6 @@ export function money(v: number | undefined, currency = "USD") {
 }
 
 export const isoDate = (d: Date | string | number) => new Date(d).toISOString().slice(0, 10);
+
+/** Ticker as accepted by the API routes and saved lists: Yahoo style, upper case (AAPL, BRK-B, NOVO-B.CO, ^GSPC). */
+export const SYMBOL_RE = /^[A-Z0-9.\-^=]{1,15}$/;

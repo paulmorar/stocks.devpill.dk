@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import type { LongTermReport } from "@/lib/analyze";
-import { getReport, scoreDelta, usePortfolio, useRecent, useSnapshot, useWatchlist } from "@/lib/client";
+import { getReport, scoreDelta, useRecent, useSnapshot } from "@/lib/client";
 import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
 import { pushRecent } from "@/lib/search";
 import { TREND_ICON } from "@/lib/trend";
 import { fx, money, pct, signedPct } from "@/lib/util";
 import { FilingsPanel } from "@/components/filings";
 import { DataFreshness, QuoteTime } from "@/components/freshness";
+import { AddToLists, usePortfolio, useWatchlist } from "@/components/lists";
 import { Explain, Only, useMode } from "@/components/mode";
+import { StockNews } from "@/components/news";
+import { InteractiveChart } from "@/components/tv-chart";
 import { Chips, Disclaimer, LineChart, RocketGauge, Term, TrendBadge } from "@/components/ui";
 
 export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
@@ -82,15 +85,20 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
         <div className="row">
           <Link className="btn" href={`/day?symbol=${encodeURIComponent(symbol)}`}>Day-trading view</Link>
           {wl.ready && (
-            <button className="btn" onClick={() => (wl.has(symbol) ? wl.remove(symbol) : wl.add(symbol))}>
-              {wl.has(symbol) ? "✓ Watching" : "+ Watchlist"}
+            <button className="btn" disabled={wl.saving(symbol)} onClick={() => (wl.has(symbol) ? wl.remove(symbol) : wl.add(symbol))}>
+              {wl.saving(symbol) ? "Saving…" : wl.has(symbol) ? "✓ Watching" : "+ Watchlist"}
             </button>
           )}
           {pf.ready && (
-            <button className={`btn ${pf.has(symbol) ? "" : "primary"}`} onClick={() => (pf.has(symbol) ? pf.remove(symbol) : pf.add(symbol))}>
-              {pf.has(symbol) ? "✓ In portfolio" : "+ Portfolio"}
+            <button
+              className={`btn ${pf.has(symbol) ? "" : "primary"}`}
+              disabled={pf.saving(symbol)}
+              onClick={() => (pf.has(symbol) ? pf.remove(symbol) : pf.add(symbol))}
+            >
+              {pf.saving(symbol) ? "Saving…" : pf.has(symbol) ? "✓ In portfolio" : "+ Portfolio"}
             </button>
           )}
+          <AddToLists symbol={symbol} />
         </div>
       </section>
 
@@ -141,6 +149,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           )}
         </div>
       </section>
+
+      <InteractiveChart symbol={r.profile.symbol} />
 
       {r.quadrant && (
         <section className="banner info">
@@ -244,6 +254,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           ))}
         </section>
       )}
+
+      <StockNews symbol={r.profile.symbol} />
 
       <section className="panel">
         <details open={mode === "expert"}>

@@ -2,10 +2,11 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { fetchJson, getShort, useMany, useWatchlist } from "@/lib/client";
+import { fetchJson, getShort, useMany } from "@/lib/client";
 import type { Setup, ShortTermResult } from "@/lib/shortterm";
 import { positionSize } from "@/lib/shortterm";
 import { fx, money, pct, signedPct } from "@/lib/util";
+import { useWatchlist } from "@/components/lists";
 import { Explain, Only, useMode } from "@/components/mode";
 import { LineChart, Term } from "@/components/ui";
 
