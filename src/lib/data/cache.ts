@@ -1,3 +1,5 @@
+import { COMPANY_CACHE_HOURS } from "../freshness";
+
 /**
  * Tiny in-memory TTL cache with in-flight de-duplication.
  * On Vercel each warm function instance keeps its own copy; the API routes also
@@ -31,8 +33,9 @@ export async function cached<T>(key: string, ttlSeconds: number, load: () => Pro
 }
 
 export const TTL = {
-  fundamentals: 60 * 60 * 12, // statements change after earnings only
+  fundamentals: 60 * 60 * COMPANY_CACHE_HOURS, // statements change after earnings only
   prices: 60 * 15,
   intraday: 60,
   screener: 60 * 5,
+  filings: 60 * 60 * 12,
 } as const;

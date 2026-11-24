@@ -33,6 +33,9 @@ jobs:
       - name: Refresh index membership
         run: npm run universe
         continue-on-error: true
+        env:
+          # Optional. SEC rejects requests without a contact; without it, CIKs come from the S&P 500 dataset only.
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       - name: Score the universe
         run: npm run scan -- ${{ github.event.inputs.symbols && format('--symbols {0}', github.event.inputs.symbols) || '' }}
         env:

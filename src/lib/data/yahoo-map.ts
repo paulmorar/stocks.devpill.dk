@@ -45,6 +45,16 @@ export function mapStatementRow(row: Record<string, unknown>): PeriodRow | undef
   return hasData ? r : undefined;
 }
 
+/** Provider timestamps arrive as a Date, epoch seconds or milliseconds, or a string. Returns ISO, or undefined if unusable. */
+export function isoTimestamp(v: unknown): string | undefined {
+  const d =
+    v instanceof Date ? v
+    : typeof v === "number" && v > 0 ? new Date(v < 1e12 ? v * 1000 : v)
+    : typeof v === "string" && v.trim() ? new Date(v)
+    : undefined;
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString() : undefined;
+}
+
 /** Collapse rows sharing a fiscal year (Yahoo can return statements as separate rows). */
 export function byYear(rows: PeriodRow[]): PeriodRow[] {
   const m = new Map<number, PeriodRow>();

@@ -2,12 +2,13 @@
 
 Find and understand stocks, two ways:
 
-- **On the Radar / Full ranking**: every S&P 500 + Nasdaq-100 company scored weekly, ranked in the same layout as TTT's weekly post, with ▲▼ changes vs last week.
+- **On the Radar / Full ranking**: every S&P 500 + Nasdaq-100 company scored weekly, ranked in the same layout as TTT's weekly post, with ▲▼ changes vs last week. Switch between S&P 500, Nasdaq-100 or both, and filter the full ranking by sector, trend, minimum score and financial history. Sector tiles show how many stocks each sector has ranked, how many score 80+, and the median score. Filters are kept in the URL, so a view can be bookmarked or shared.
 - **My portfolio / Watchlist / Discover**: your own lists, scored live and ranked the same way.
 - **Long-term**: a 0–100 business-quality score modelled on The Traveling Trader's TTT Score (Value 25 · Growth 25 · Quality 30 · Financial Health 20), with red-flag caps, a financials scorecard (**F**), a heavy-investor mode (**CAPEX**), and a separate 200-day trend reading with RS and industry momentum.
+- **Stock pages** link to the company's latest annual and quarterly SEC filings, and say how current each number is: when the price was set, which annual reports were used, when the data was retrieved, and which weekly snapshot ranked the stock.
 - **Day trading**: a scanner for stocks "in play" (gap, relative volume, VWAP, RSI, ATR, stretch) that spots common setups, suggests mechanical stops/targets, and sizes positions from your risk.
 
-Every number is explained twice. Use the **Beginner / Expert** switch in the header to choose which version leads; the other is one tap away. Underlined terms have plain-language tooltips, and `/learn` explains the whole method.
+Every number is explained twice. Use the **Beginner / Expert** switch in the header to choose which version leads; the other is one tap away. Underlined terms have plain-language tooltips, and `/learn` explains the whole method. Press **⌘K** (Ctrl+K on Windows and Linux) to search from any page. Results can go straight onto your watchlist or portfolio, and recently viewed stocks appear when the search box is empty.
 
 > Educational tool, not investment advice. Data is delayed and may be wrong.
 
@@ -24,7 +25,7 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # scoring, trend, splits, merging, snapshots, day-trading signals, auth
+npm test          # scoring, trend, splits, merging, snapshots, ranking filters, SEC filings, data freshness, search, day-trading signals, auth
 npm run typecheck
 npm run build
 ```
@@ -57,7 +58,7 @@ Sign-in only asks GitHub for the account's email addresses (`user:email` scope).
 ## Deploy to Vercel
 
 1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 24.x, pinned in `package.json`).
-2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY`.
+2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY` and `SEC_USER_AGENT` (see SEC filings below).
 3. Deploy.
 
 The `allowScripts` entry in `package.json` approves only the pinned esbuild version's
@@ -74,7 +75,7 @@ Scoring ~515 companies takes too long for a page load or a Vercel function, so i
 3. `npm run scan` scores everything and writes `src/data/snapshots/<date>.json` + `latest.json` (26 weeks kept). Deltas are computed against the previous file, so ▲▼ are real week-over-week changes.
 4. The workflow commits the snapshot; the commit triggers a Vercel deploy that serves it via `/api/radar`.
 
-Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` as a repo secret if you use FMP. A full weekly scan is ~1,500 FMP calls, above the free plan's 250/day, so FMP falls back to Yahoo-only for the rest unless you're on a paid plan.
+Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` as a repo secret if you use FMP. A full weekly scan is ~1,500 FMP calls, above the free plan's 250/day, so FMP falls back to Yahoo-only for the rest unless you're on a paid plan. Add `SEC_USER_AGENT` as a repo secret too if you want CIKs for the Nasdaq-100 companies outside the S&P 500 (see SEC filings below).
 
 Locally: `npm run scan -- --limit 30` for a quick test, `npm run scan -- --symbols NVDA,ASML` to rescore a few names inside today's snapshot.
 
@@ -95,8 +96,17 @@ The report shows the gap for each stock and each pillar, the overall bias and me
 |---|---|---|
 | **Yahoo Finance** via [`yahoo-finance2`](https://github.com/gadicc/yahoo-finance2) v4 | prices (6.5 y daily, 5-min intraday), quote, analyst estimates, profile, statements (`fundamentalsTimeSeries`), screeners, search | Server-side only, same pattern as `how-is-my-stock-doing`'s netlify-lambda proxy. Unofficial API: shapes can change. Usually ~4–5 fiscal years of statements. |
 | **Financial Modeling Prep** (optional) | longer statement history for the 10-year checks; fills gaps | Set `FMP_API_KEY`. Free plans may cap history at 5 years; the adapter retries with `limit=5`. |
+| **SEC EDGAR** (optional) | links to the latest annual and quarterly filings on stock pages | Never used for scores. Set `SEC_USER_AGENT` (see below). |
 
 Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fills gaps and adds older years. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
+
+Each stock page has a **How current is this?** panel. The price shows the time the provider set it, never the time you opened the page, so a Friday close still reads as Friday on Monday. Company data, including that price, stays in the server cache for up to 12 hours. A weekly snapshot older than 8 days is flagged, because it means at least one scan was missed.
+
+### SEC filings
+
+Stock pages link to the company's filings on EDGAR. The weekly universe update stores each company's SEC number (CIK) in `src/data/universe.json`: from SEC's ticker list when `SEC_USER_AGENT` is set, otherwise from the S&P 500 dataset, so the Nasdaq-100 companies outside the S&P 500 only get one with the SEC list. Without a CIK, the links search EDGAR by ticker. Non-US listings get no links.
+
+To show the latest annual report (10-K, 20-F or 40-F) and quarterly report (10-Q) with their filing dates, set `SEC_USER_AGENT` in Vercel and as a GitHub Actions secret. SEC rejects automated requests that don't name a contact, so use the app name and an email address, such as `Stock Scout you@example.com`. Without it, the app sends no requests to the SEC. Amendments (10-K/A, 10-Q/A) are listed separately from the original report. Lookups are cached for 12 hours, spaced out, and paused for 10 minutes after a failure. The links open in your browser either way.
 
 ### Scoring with Yahoo-only history
 
@@ -136,14 +146,17 @@ Interpretation choices worth knowing:
 ## Layout
 
 ```
-src/lib/data/        yahoo.ts, yahoo-map.ts, fmp.ts, merge.ts, splits.ts, demo.ts, cache.ts, index.ts (facade)
+src/lib/data/        yahoo.ts, yahoo-map.ts, fmp.ts, merge.ts, splits.ts, demo.ts, cache.ts, sec.ts + sec-map.ts (EDGAR), index.ts (facade)
 src/lib/scoring/     engine.ts (pillars, re-weighting, flags, caps), checks-main.ts, checks-financials.ts, metrics.ts, summary.ts
 src/lib/trend.ts     200-DMA states, RS, Ind, score × trend quadrants
 src/lib/shortterm.ts day-trading indicators, setups, position sizing
 src/lib/snapshot.ts  weekly snapshot format, deltas, ranking, industry-peer momentum
-src/data/            universe.json, snapshots/, ttt-reference.ts
+src/lib/explore.ts   ranking filters, sector overview, filters in the URL
+src/lib/freshness.ts how old quotes, retrieved data and snapshots are
+src/lib/search.ts    header search: shortcut, recent symbols, stale-response guard
+src/data/            universe.json (members, index, CIK), snapshots/, ttt-reference.ts
 scripts/             scan.ts, update-universe.ts, calibrate.ts
-src/app/api/         score/[symbol], short/[symbol], radar, screen, search, meta, auth/{login,logout,github}
+src/app/api/         score/[symbol], short/[symbol], filings/[symbol], radar, screen, search, meta, auth/{login,logout,github}
 src/lib/auth/        session.ts (signed cookies, allowlist), password.ts (scrypt), github.ts (OAuth)
 src/proxy.ts         login gate in front of every page and API route
 src/app/             / (long-term), /stock/[symbol], /day, /learn
