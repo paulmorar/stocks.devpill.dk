@@ -2,7 +2,7 @@ import "server-only";
 import YahooFinance from "yahoo-finance2";
 import type { CompanyData, DailyBar, IntradayBar, PeriodRow, PricePoint } from "../types";
 import { isNum, isoDate, num } from "../util";
-import { byYear, mapStatementRow } from "./yahoo-map";
+import { byYear, isoTimestamp, mapStatementRow } from "./yahoo-map";
 import { applySplits, type Split } from "./splits";
 
 /**
@@ -84,6 +84,8 @@ export async function yahooCompany(symbol: string): Promise<Omit<CompanyData, "f
     },
     market: {
       price: num(price, "regularMarketPrice") ?? num(fin, "currentPrice"),
+      // Only meaningful for the regular-market price; financialData.currentPrice carries no time.
+      quoteTime: num(price, "regularMarketPrice") !== undefined ? isoTimestamp(price.regularMarketTime) : undefined,
       marketCap: num(price, "marketCap") ?? num(detail, "marketCap"),
       changePct: num(price, "regularMarketChangePercent"), // quoteSummary.price: fraction (0.0123)
       trailingPE: num(detail, "trailingPE"),

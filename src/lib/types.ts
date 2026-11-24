@@ -73,6 +73,8 @@ export interface CompanyProfile {
 
 export interface MarketSnapshot {
   price?: number;
+  /** When the provider last updated `price` (ISO timestamp). Absent when the provider doesn't say. */
+  quoteTime?: string;
   marketCap?: number;
   /** Fraction: 0.0123 = +1.23%. */
   changePct?: number;

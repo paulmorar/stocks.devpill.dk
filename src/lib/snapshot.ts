@@ -45,7 +45,8 @@ export interface Snapshot {
   /** Industry momentum from universe peers: median 6-month return minus the S&P 500's. */
   industries?: Record<string, { ind: number; n: number }>;
   rows: RadarRow[];
-  failed: { symbol: string; error: string }[];
+  /** `index` lets failures be counted per universe; older snapshots omit it. */
+  failed: { symbol: string; error: string; index?: string[] }[];
 }
 
 export const EMPTY_SNAPSHOT: Snapshot = {

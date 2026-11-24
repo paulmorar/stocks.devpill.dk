@@ -4,8 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchJson, getReport, scoreDelta, useMany, usePortfolio, useSnapshot, useWatchlist } from "@/lib/client";
 import type { LongTermReport } from "@/lib/analyze";
+import { applyFilters, availableUniverses, DEFAULT_FILTERS, filtersToParams, type Filters, inUniverse, overview, parseFilters, UNIVERSES } from "@/lib/explore";
+import { COMPANY_CACHE_HOURS } from "@/lib/freshness";
 import { rank, type RadarRow, toRow } from "@/lib/snapshot";
 import { TTT_PORTFOLIO } from "@/data/ttt-reference";
+import { RankingFilters, SectorTiles, UniverseSwitch } from "@/components/explore";
+import { SnapshotAge } from "@/components/freshness";
 import { Only, useMode } from "@/components/mode";
 import { RankTable } from "@/components/rank-table";
 import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
@@ -44,19 +48,40 @@ export default function Home() {
   const [screenErr, setScreenErr] = useState<string>();
   const [view, setView] = useState<"table" | "cards">("table");
   const [page, setPage] = useState(0);
-  const [filter, setFilter] = useState("");
+  const [filters, setFiltersState] = useState<Filters>(DEFAULT_FILTERS);
+  const [urlRead, setUrlRead] = useState(false);
   const [introHidden, setIntroHidden] = useState(false);
 
   useEffect(() => {
     fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, demoSymbols: [] }));
+    // A shared or reopened URL wins over the tab remembered in this browser.
+    const params = new URLSearchParams(window.location.search);
+    setFiltersState(parseFilters(params));
     try {
-      const t = localStorage.getItem("scout:tab") as Tab | null;
-      if (t && TABS.some((x) => x.id === t)) setTab(t);
+      const t = params.get("tab") ?? localStorage.getItem("scout:tab");
+      if (TABS.some((x) => x.id === t)) setTab(t as Tab);
       const v = localStorage.getItem("scout:view");
       if (v === "cards" || v === "table") setView(v);
       setIntroHidden(localStorage.getItem("scout:intro") === "hidden");
     } catch {}
+    setUrlRead(true);
   }, []);
+
+  // Keep the view in the URL so it can be reopened or shared. replaceState adds no history entry per keystroke.
+  useEffect(() => {
+    if (!urlRead) return;
+    const params = filtersToParams(filters, new URLSearchParams(window.location.search));
+    if (tab === "radar") params.delete("tab");
+    else params.set("tab", tab);
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+    if (next !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", next);
+  }, [tab, filters, urlRead]);
+
+  const setFilters = (f: Filters) => {
+    setFiltersState(f);
+    setPage(0);
+  };
   const pickTab = (t: Tab) => {
     setTab(t);
     setPage(0);
@@ -84,6 +109,13 @@ export default function Home() {
   const snapRows = useMemo(() => rank(snap?.rows ?? []), [snap]);
   const snapBy = useMemo(() => new Map(snapRows.map((r) => [r.symbol, r])), [snapRows]);
   const hasSnapshot = snapRows.length > 0;
+  const universes = useMemo(() => availableUniverses(snap?.rows ?? []), [snap]);
+  // A URL can ask for an index this snapshot has no data for (demo mode); fall back to everything.
+  const universe = universes.some((u) => u.id === filters.universe) ? filters.universe : "all";
+  const universeRows = useMemo(() => snapRows.filter((r) => inUniverse(r, universe) === true), [snapRows, universe]);
+  const universeLabel = universe === "all" ? (snap?.universe ?? "S&P 500 + Nasdaq 100") : (UNIVERSES.find((u) => u.id === universe)?.label ?? "");
+  const sectorOverview = useMemo(() => (snap ? overview(snap, universe) : undefined), [snap, universe]);
+  const rankingRows = useMemo(() => applyFilters(snapRows, { ...filters, universe }), [snapRows, filters, universe]);
 
   // Lists scored live, on request.
   const liveSymbols = useMemo(() => {
@@ -113,20 +145,20 @@ export default function Home() {
     }),
   ).concat(liveReports.filter((r) => !r.score.scorable).map((r) => toRow(r)));
 
-  const radar = snapRows.filter((r) => r.score >= 80);
-  const q = filter.trim().toUpperCase();
-  const rankingRows = q ? snapRows.filter((r) => r.symbol.includes(q) || r.name.toUpperCase().includes(q) || (r.industry ?? "").toUpperCase().includes(q)) : snapRows;
-  const turningUp = snapRows.filter((r) => r.score >= 65 && r.trend === "Recovering").slice(0, 12);
+  const radar = universeRows.filter((r) => r.score >= 80);
+  const turningUp = universeRows.filter((r) => r.score >= 65 && r.trend === "Recovering").slice(0, 12);
   const holdingsWarn = tab === "portfolio" ? liveRows.filter((r) => r.trend === "Downtrend" || r.flags.length > 0) : [];
 
   const title =
     tab === "radar" ? "On the Radar" : tab === "ranking" ? "Full ranking" : tab === "portfolio" ? "Portfolio holdings scores" : tab === "watchlist" ? "Watchlist" : "Discover";
   const subtitle =
-    tab === "radar"
-      ? `All ${radar.length} scoring 80+ · ${snap?.universe ?? "S&P 500 + Nasdaq 100"}`
-      : tab === "ranking"
-        ? `${snapRows.length} scored · ${snap?.universe ?? ""}`
-        : `${liveRows.length} stocks · scored live`;
+    snapshotTab && !snap
+      ? "Loading the weekly ranking…"
+      : tab === "radar"
+        ? `All ${radar.length} scoring 80+ · ${universeLabel}`
+        : tab === "ranking"
+          ? `${rankingRows.length} of ${universeRows.length} ranked · ${universeLabel}`
+          : `${liveRows.length} stocks · scored live`;
 
   return (
     <div className="stack">
@@ -192,10 +224,18 @@ export default function Home() {
           </div>
           <div className="meta">
             {snapshotTab && snap?.date && <div className="num" style={{ fontWeight: 700 }}>{fmtDate(snap.date)}</div>}
+            {snapshotTab && snap?.date && <SnapshotAge snap={snap} />}
             <div className="small muted">{subtitle}</div>
             {snapshotTab && snap?.previousDate && <div className="tiny faint">▲▼ vs {fmtDate(snap.previousDate)}</div>}
+            {!snapshotTab && <div className="tiny faint">Company data is cached for up to {COMPANY_CACHE_HOURS} hours.</div>}
           </div>
         </div>
+
+        {snapshotTab && hasSnapshot && universes.length > 1 && (
+          <div className="row" style={{ marginBottom: 12 }}>
+            <UniverseSwitch value={universe} options={universes} onChange={(u) => setFilters({ ...filters, universe: u })} />
+          </div>
+        )}
 
         {/* Snapshot-backed lists */}
         {snapshotTab && !snap && !snapErr && <div className="skeleton" style={{ height: 300 }} />}
@@ -210,18 +250,21 @@ export default function Home() {
             You can use <i>My portfolio</i>, <i>Watchlist</i>, or <i>Discover</i> while you wait; those tabs fetch scores when you open them.
           </div>
         )}
-        {tab === "radar" && hasSnapshot && (radar.length ? <RankTable rows={radar} /> : <p className="muted">Nothing scores 80+ this week.</p>)}
+        {tab === "radar" && hasSnapshot && (radar.length ? <RankTable rows={radar} /> : <p className="muted">Nothing in the {universeLabel} scores 80+ this week.</p>)}
         {tab === "ranking" && hasSnapshot && (
           <>
-            <div className="row" style={{ marginBottom: 8 }}>
-              <input placeholder="Filter by ticker, name or industry" value={filter} onChange={(e) => (setFilter(e.target.value), setPage(0))} style={{ width: 280 }} />
-              <span className="small muted">
-                {rankingRows.length ? `${page * PAGE + 1}–${Math.min(rankingRows.length, (page + 1) * PAGE)} of ${rankingRows.length}` : "No matches"}
+            {sectorOverview && (
+              <SectorTiles overview={sectorOverview} label={universeLabel} active={filters.sector} onPick={(sector) => setFilters({ ...filters, sector })} />
+            )}
+            <RankingFilters filters={filters} onChange={setFilters} />
+            <div className="row" style={{ margin: "10px 0 8px" }}>
+              <span className="small muted" role="status">
+                {rankingRows.length ? `${page * PAGE + 1}–${Math.min(rankingRows.length, (page + 1) * PAGE)} of ${rankingRows.length}` : "No stocks match these filters."}
               </span>
               <button className="btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>← Prev</button>
               <button className="btn" disabled={(page + 1) * PAGE >= rankingRows.length} onClick={() => setPage((p) => p + 1)}>Next →</button>
             </div>
-            <RankTable rows={rankingRows.slice(page * PAGE, (page + 1) * PAGE)} startRank={q ? 1 : page * PAGE + 1} />
+            {rankingRows.length > 0 && <RankTable rows={rankingRows.slice(page * PAGE, (page + 1) * PAGE)} startRank={page * PAGE + 1} />}
           </>
         )}
         {snapshotTab && turningUp.length > 0 && (

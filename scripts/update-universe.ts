@@ -1,26 +1,45 @@
 /**
  * Refresh src/data/universe.json from public sources:
- *  - S&P 500: github.com/datasets/s-and-p-500-companies (CSV)
+ *  - S&P 500: github.com/datasets/s-and-p-500-companies (CSV, includes each company's SEC CIK)
  *  - Nasdaq-100: Nasdaq's public list API
- * Keeps the current file if either source fails, so a flaky source never empties the universe.
+ *  - SEC company tickers (optional, needs SEC_USER_AGENT): CIKs for the Nasdaq-100 extras
+ * Keeps the current file if either index source fails, so a flaky source never empties the universe,
+ * and keeps known CIKs when no source has a newer one.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { parseCsvLine } from "../src/lib/csv";
+import { normalizeSymbol as yahooSymbol, padCik, secUserAgent } from "../src/lib/data/sec-map";
 
 const FILE = path.join(process.cwd(), "src/data/universe.json");
-type Member = { symbol: string; name: string; index: string[] };
-
-const yahooSymbol = (s: string) => s.trim().toUpperCase().replace(/\./g, "-");
+type Member = { symbol: string; name: string; index: string[]; cik?: string };
 
 async function sp500(): Promise<Member[]> {
   const res = await fetch("https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv");
   if (!res.ok) throw new Error(`S&P 500 CSV ${res.status}`);
-  const lines = (await res.text()).trim().split("\n").slice(1);
-  return lines.map((line) => {
-    // Symbol,Security,... — names may contain quoted commas, so only split the first two fields carefully.
-    const m = line.match(/^([^,]+),("([^"]*)"|[^,]*)/);
-    return { symbol: yahooSymbol(m?.[1] ?? ""), name: (m?.[3] ?? m?.[2] ?? "").trim(), index: ["SP500"] };
-  }).filter((m) => m.symbol);
+  const [header = [], ...rows] = (await res.text()).trim().split("\n").map((line) => parseCsvLine(line.replace(/\r$/, "")));
+  const [sym, name, cik] = ["Symbol", "Security", "CIK"].map((c) => header.indexOf(c));
+  return rows
+    .map((f) => ({
+      symbol: yahooSymbol(f[sym as number] ?? ""),
+      name: (f[name as number] ?? "").trim(),
+      index: ["SP500"],
+      cik: /^\d+$/.test(f[cik as number]?.trim() ?? "") ? padCik(f[cik as number] as string) : undefined,
+    }))
+    .filter((m) => m.symbol);
+}
+
+/** SEC's own ticker list. SEC rejects requests without a declared contact, so this only runs with SEC_USER_AGENT set. */
+async function secCiks(): Promise<Map<string, string>> {
+  const ua = secUserAgent();
+  if (!ua) throw new Error("SEC_USER_AGENT is not set (it needs a contact email)");
+  const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
+    headers: { "User-Agent": ua, Accept: "application/json" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`SEC company tickers ${res.status}`);
+  const body = (await res.json()) as Record<string, { cik_str: number; ticker: string }>;
+  return new Map(Object.values(body).map((e) => [yahooSymbol(e.ticker), padCik(e.cik_str)]));
 }
 
 async function nasdaq100(): Promise<Member[]> {
@@ -50,11 +69,22 @@ async function main() {
     else by.set(m.symbol, { ...m, index: ["NDX"] });
   }
   const members = [...by.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  // CIKs: SEC's list when available, then the S&P 500 CSV, then what the file already had.
+  const sec = await secCiks().catch((e) => {
+    console.warn("SEC tickers unavailable, using CSV and known CIKs:", (e as Error).message);
+    return undefined;
+  });
+  const known = new Map(current.members.filter((m) => m.cik).map((m) => [m.symbol, m.cik as string]));
+  for (const m of members) {
+    const cik = sec?.get(m.symbol) ?? m.cik ?? known.get(m.symbol);
+    if (cik) m.cik = cik;
+    else delete m.cik;
+  }
   await writeFile(
     FILE,
-    JSON.stringify({ asOf: new Date().toISOString().slice(0, 10), source: "S&P 500: datasets/s-and-p-500-companies; Nasdaq-100: api.nasdaq.com", members }, null, 0),
+    JSON.stringify({ asOf: new Date().toISOString().slice(0, 10), source: "S&P 500: datasets/s-and-p-500-companies; Nasdaq-100: api.nasdaq.com; CIK: SEC or the S&P 500 dataset", members }, null, 0),
   );
-  console.log(`Universe: ${members.length} members (${members.filter((m) => m.index.includes("NDX")).length} in Nasdaq-100).`);
+  console.log(`Universe: ${members.length} members (${members.filter((m) => m.index.includes("NDX")).length} in Nasdaq-100, ${members.filter((m) => m.cik).length} with a CIK).`);
 }
 
 main().catch((e) => {

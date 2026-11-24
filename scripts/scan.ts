@@ -81,7 +81,7 @@ async function main() {
           const rep = await withRetry(() => analyzeLongTerm(m.symbol));
           rows.push(toRow(rep, m.index));
         } catch (e) {
-          failed.push({ symbol: m.symbol, error: String((e as Error)?.message ?? e).slice(0, 200) });
+          failed.push({ symbol: m.symbol, error: String((e as Error)?.message ?? e).slice(0, 200), index: m.index });
         }
         done++;
         if (done % 25 === 0 || done === targets.length) {

@@ -3,61 +3,168 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { fetchJson } from "@/lib/client";
+import { fetchJson, usePortfolio, useRecent, useWatchlist } from "@/lib/client";
+import { isSearchShortcut, latestGate, moveHighlight } from "@/lib/search";
 import { ModeToggle } from "./mode";
 
 type Hit = { symbol: string; name: string; exchange: string; type: string };
+type Item = { symbol: string; name?: string; note?: string };
 
 function SearchBox() {
   const router = useRouter();
+  const wl = useWatchlist();
+  const pf = usePortfolio();
+  const recent = useRecent();
+  const box = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const returnTo = useRef<HTMLElement | null>(null);
+  const gate = useRef(latestGate());
   const [q, setQ] = useState("");
-  const [hits, setHits] = useState<Hit[]>([]);
+  // Results remember their query, so Enter never opens a stale match while a newer search is running.
+  const [result, setResult] = useState<{ q: string; hits: Hit[]; failed: boolean }>();
   const [open, setOpen] = useState(false);
   const [hl, setHl] = useState(0);
-  const t = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [shortcut, setShortcut] = useState("");
+
+  const query = q.trim();
+  const current = result?.q === query ? result : undefined;
+  const status = !query ? "idle" : !current ? "loading" : current.failed ? "error" : "done";
+  const items: Item[] = query
+    ? (current?.hits ?? []).map((h) => ({ symbol: h.symbol, name: h.name, note: h.type === "ETF" ? "ETF" : h.exchange }))
+    : recent.list.map((symbol) => ({ symbol }));
 
   useEffect(() => {
-    clearTimeout(t.current);
-    if (!q.trim()) return setHits([]);
-    t.current = setTimeout(() => {
-      fetchJson<Hit[]>(`/api/search?q=${encodeURIComponent(q)}`).then(setHits).catch(() => setHits([]));
+    setShortcut(/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘K" : "Ctrl K");
+    const onKey = (e: KeyboardEvent) => {
+      if (!isSearchShortcut(e)) return;
+      e.preventDefault();
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && !box.current?.contains(active)) returnTo.current = active;
+      input.current?.focus();
+      input.current?.select();
+      setOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    const id = gate.current.next();
+    setHl(0);
+    if (!query) return;
+    const t = setTimeout(() => {
+      fetchJson<Hit[]>(`/api/search?q=${encodeURIComponent(query)}`)
+        .then((hits) => gate.current.isCurrent(id) && setResult({ q: query, hits, failed: false }))
+        .catch(() => gate.current.isCurrent(id) && setResult({ q: query, hits: [], failed: true }));
     }, 220);
-  }, [q]);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const go = (sym: string) => {
-    setOpen(false);
+    const s = sym.trim().toUpperCase();
+    if (!s) return;
     setQ("");
-    router.push(`/stock/${encodeURIComponent(sym.toUpperCase())}`);
+    setOpen(false);
+    returnTo.current = null;
+    input.current?.blur();
+    router.push(`/stock/${encodeURIComponent(s)}`);
   };
 
+  const message =
+    status === "loading" ? "Searching…"
+    : status === "error" ? `Search isn't available right now. Press Enter to open ${query.toUpperCase()} as a ticker.`
+    : status === "done" && !items.length ? `No matches for "${query}". Press Enter to open ${query.toUpperCase()} as a ticker.`
+    : "";
+
   return (
-    <div className="search">
+    <div
+      className="search"
+      ref={box}
+      onBlur={(e) => {
+        if (!box.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        const back = returnTo.current;
+        returnTo.current = null;
+        setOpen(false);
+        // Back to where Cmd/Ctrl+K was pressed; from a result button, back to the input rather than the page body.
+        if (back?.isConnected) back.focus();
+        else if (e.target !== input.current) input.current?.focus();
+      }}
+    >
       <input
+        ref={input}
         placeholder="Search ticker or company"
         value={q}
+        autoComplete="off"
+        spellCheck={false}
+        enterKeyHint="go"
         onChange={(e) => {
           setQ(e.target.value);
           setOpen(true);
-          setHl(0);
         }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onFocus={(e) => {
+          if (!box.current?.contains(e.relatedTarget as Node | null)) setOpen(true);
+        }}
+        onClick={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") setHl((h) => Math.min(h + 1, hits.length - 1));
-          if (e.key === "ArrowUp") setHl((h) => Math.max(h - 1, 0));
-          if (e.key === "Enter") go(hits[hl]?.symbol ?? q.trim());
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            setOpen(true);
+            setHl((h) => moveHighlight(h, e.key === "ArrowDown" ? 1 : -1, items.length));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            go((open && items[hl]?.symbol) || query);
+          }
         }}
         aria-label="Search stocks"
+        aria-describedby="search-status"
       />
-      {open && hits.length > 0 && (
-        <div className="results">
-          {hits.map((h, i) => (
-            <button key={h.symbol} className={i === hl ? "hl" : ""} onMouseDown={() => go(h.symbol)}>
-              <b style={{ minWidth: 70 }}>{h.symbol}</b>
-              <span className="muted small" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</span>
-              <span className="faint tiny">{h.type === "ETF" ? "ETF" : h.exchange}</span>
-            </button>
-          ))}
+      {shortcut && !q && <kbd className="kbd" aria-hidden>{shortcut}</kbd>}
+      <span id="search-status" className="sr-only" aria-live="polite">
+        {status === "done" ? `${items.length} result${items.length === 1 ? "" : "s"}` : message}
+      </span>
+      {open && (query || items.length > 0) && (
+        // Mouse-down would move focus out of the input and close the list before the click lands.
+        <div className="results" role="region" aria-label="Search results" onMouseDown={(e) => e.preventDefault()}>
+          {!query && (
+            <div className="results-head tiny muted">
+              <span>Recently viewed</span>
+              <button className="linkish" onClick={() => recent.replace([])}>Clear</button>
+            </div>
+          )}
+          {items.map((it, i) => {
+            const watching = wl.has(it.symbol);
+            const owned = pf.has(it.symbol);
+            return (
+              <div key={it.symbol} className={`result${i === hl ? " hl" : ""}`} onMouseEnter={() => setHl(i)}>
+                <button className="open" onClick={() => go(it.symbol)}>
+                  <b>{it.symbol}</b>
+                  {it.name && <span className="muted small name">{it.name}</span>}
+                  {it.note && <span className="faint tiny">{it.note}</span>}
+                </button>
+                <button
+                  className={`act${watching ? " on" : ""}`}
+                  aria-pressed={watching}
+                  aria-label={`${watching ? "Remove" : "Add"} ${it.symbol} ${watching ? "from" : "to"} watchlist`}
+                  onClick={() => (watching ? wl.remove(it.symbol) : wl.add(it.symbol))}
+                >
+                  {watching ? "✓ Watching" : "+ Watch"}
+                </button>
+                <button
+                  className={`act${owned ? " on" : ""}`}
+                  aria-pressed={owned}
+                  aria-label={`${owned ? "Remove" : "Add"} ${it.symbol} ${owned ? "from" : "to"} portfolio`}
+                  onClick={() => (owned ? pf.remove(it.symbol) : pf.add(it.symbol))}
+                >
+                  {owned ? "✓ Portfolio" : "+ Portfolio"}
+                </button>
+              </div>
+            );
+          })}
+          {message && <div className="results-msg small muted">{message}</div>}
         </div>
       )}
     </div>

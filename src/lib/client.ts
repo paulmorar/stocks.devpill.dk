@@ -73,31 +73,55 @@ function writeLS(key: string, v: unknown) {
   } catch {}
 }
 
+const LIST_EVENT = "scout:lists";
+
 function useSymbolList(key: string, defaults: string[]) {
   const [list, setList] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
+  const latest = useRef<string[]>([]);
   useEffect(() => {
-    setList(readLS(key, defaults));
+    const load = () => {
+      latest.current = readLS(key, defaults);
+      setList(latest.current);
+    };
+    load();
     setReady(true);
+    // The header search, the stock page and other tabs edit the same lists.
+    const onChange = (e: Event) => {
+      if ((e instanceof StorageEvent ? e.key : (e as CustomEvent<string>).detail) === key) load();
+    };
+    window.addEventListener(LIST_EVENT, onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener(LIST_EVENT, onChange);
+      window.removeEventListener("storage", onChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  const save = (l: string[]) => {
-    setList(l);
-    writeLS(key, l);
+  // Read-modify-write against storage (or the last known list if storage is unavailable), never a stale render.
+  const update = (fn: (current: string[]) => string[]) => {
+    const next = [...new Set(fn(readLS(key, latest.current)).map((x) => x.toUpperCase()))];
+    latest.current = next;
+    setList(next);
+    writeLS(key, next);
+    window.dispatchEvent(new CustomEvent(LIST_EVENT, { detail: key }));
   };
   return {
     list,
     ready,
     has: (s: string) => list.includes(s),
-    add: (s: string) => !list.includes(s) && save([...list, s]),
-    remove: (s: string) => save(list.filter((x) => x !== s)),
-    replace: (l: string[]) => save([...new Set(l.map((x) => x.toUpperCase()))]),
+    add: (s: string) => update((l) => (l.includes(s) ? l : [...l, s])),
+    remove: (s: string) => update((l) => l.filter((x) => x !== s)),
+    replace: (l: string[]) => update(() => l),
+    update,
   };
 }
 
 export const useWatchlist = () => useSymbolList("scout:watchlist", DEFAULT_WATCHLIST);
 /** Stocks you actually own — ranked like TTT's "Portfolio Holdings Scores". */
 export const usePortfolio = () => useSymbolList("scout:portfolio", []);
+/** Stock pages opened recently in this browser, newest first. */
+export const useRecent = () => useSymbolList("scout:recent", []);
 
 /* ── Weekly snapshot ── */
 

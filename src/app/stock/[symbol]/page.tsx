@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import type { LongTermReport } from "@/lib/analyze";
-import { getReport, scoreDelta, usePortfolio, useSnapshot, useWatchlist } from "@/lib/client";
+import { getReport, scoreDelta, usePortfolio, useRecent, useSnapshot, useWatchlist } from "@/lib/client";
 import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
+import { pushRecent } from "@/lib/search";
 import { TREND_ICON } from "@/lib/trend";
 import { fx, money, pct, signedPct } from "@/lib/util";
+import { FilingsPanel } from "@/components/filings";
+import { DataFreshness, QuoteTime } from "@/components/freshness";
 import { Explain, Only, useMode } from "@/components/mode";
 import { Chips, Disclaimer, LineChart, RocketGauge, Term, TrendBadge } from "@/components/ui";
 
@@ -16,7 +19,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
   const { mode } = useMode();
   const wl = useWatchlist();
   const pf = usePortfolio();
-  const { snap } = useSnapshot();
+  const recent = useRecent();
+  const { snap, error: snapError } = useSnapshot();
   const [r, setR] = useState<LongTermReport>();
   const [err, setErr] = useState<string>();
   const [delta, setDelta] = useState<number>();
@@ -27,9 +31,12 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
     getReport(symbol)
       .then((rep) => {
         setR(rep);
+        // Only symbols that actually loaded go into the search box's recent list.
+        recent.update((l) => pushRecent(l, symbol));
         if (rep.score.scorable) setDelta(scoreDelta(symbol, rep.score.total));
       })
       .catch((e) => setErr(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol]);
 
   if (err) {
@@ -64,8 +71,9 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
               {fx(m.price, 2)} {cur}
             </span>
             {m.changePct !== undefined && (
-              <span className={`num ${m.changePct >= 0 ? "band-green" : "band-red"}`}>{signedPct(m.changePct, 2)} today</span>
+              <span className={`num ${m.changePct >= 0 ? "band-green" : "band-red"}`}>{signedPct(m.changePct, 2)}</span>
             )}
+            <QuoteTime market={m} />
             <span>{[r.profile.sector, r.profile.industry].filter(Boolean).join(" · ")}</span>
             {m.marketCap !== undefined && <span>Market cap {money(m.marketCap, cur)}</span>}
             <Chips r={r} />
@@ -247,6 +255,11 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
         </details>
       </section>
 
+      <section className="grid two">
+        <FilingsPanel symbol={r.profile.symbol} />
+        <DataFreshness r={r} snap={snap} snapError={snapError} />
+      </section>
+
       <section className="panel small">
         <h3>What this score is not</h3>
         <ul className="muted" style={{ margin: 0, paddingLeft: 18 }}>
@@ -254,14 +267,15 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           <li>A strong score does not mean low risk. {mode === "expert" ? "META fell about 75% from its 2021 peak to its 2022 low despite strong fundamentals." : "Even companies with strong finances can lose much of their share value. Facebook's owner lost about three-quarters of its value in 2022."}</li>
           <li>This is not a forecast. {mode === "expert" ? "Forward-looking checks rely on analyst estimates, which can be wrong." : "Some checks use analysts' estimates of future earnings. Those estimates can be wrong."}</li>
         </ul>
-        <p className="tiny faint" style={{ marginTop: 8 }}>
-          Sources: {r.sources.join(" + ")} · {s.yearsOfHistory} fiscal years · fetched {new Date(r.fetchedAt).toLocaleString()}
-          {r.warnings.map((w) => (
-            <span key={w}>
-              <br />⚠ {w}
-            </span>
-          ))}
-        </p>
+        {r.warnings.length > 0 && (
+          <p className="tiny faint" style={{ marginTop: 8 }}>
+            {r.warnings.map((w, i) => (
+              <span key={w}>
+                {i > 0 && <br />}⚠ {w}
+              </span>
+            ))}
+          </p>
+        )}
         <Disclaimer />
       </section>
     </div>

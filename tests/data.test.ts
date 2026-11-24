@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applySplits } from "@/lib/data/splits";
 import { mergeAnnual } from "@/lib/data/merge";
-import { byYear, mapStatementRow } from "@/lib/data/yahoo-map";
+import { byYear, isoTimestamp, mapStatementRow } from "@/lib/data/yahoo-map";
 import type { PeriodRow } from "@/lib/types";
 import { cagr, scale } from "@/lib/util";
 
@@ -59,6 +59,14 @@ describe("yahoo fundamentalsTimeSeries mapping", () => {
     const merged = byYear([row(2024, { revenue: 5 }), row(2024, { equity: 9 }), row(2023, { revenue: 4 })]);
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({ revenue: 5, equity: 9 });
+  });
+
+  it("normalizes quote times and rejects unusable ones", () => {
+    const iso = "2026-11-20T21:00:00.000Z";
+    expect(isoTimestamp(new Date(iso))).toBe(iso);
+    expect(isoTimestamp(Date.parse(iso) / 1000)).toBe(iso);
+    expect(isoTimestamp(Date.parse(iso))).toBe(iso);
+    for (const bad of [undefined, null, 0, "", "soon", new Date("x")]) expect(isoTimestamp(bad)).toBeUndefined();
   });
 });
 
