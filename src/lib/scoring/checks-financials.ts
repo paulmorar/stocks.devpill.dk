@@ -147,8 +147,9 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "roe", pillar: "quality", label: "Return on equity",
       rule: "0 pts at 5%, full at 15%",
       run: () => {
-        if (!lf || !bal) return skip("No statements");
-        const v = roe(lf, bal);
+        const row = m.latest((r) => isNum(r.netIncome)) ?? lf;
+        if (!row || !bal) return skip("No statements");
+        const v = roe(row, bal);
         if (!isNum(v)) return skip("Missing equity");
         return {
           score: scale(v, 0.05, 0.15), display: pct(v),
@@ -161,8 +162,9 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "roa", pillar: "quality", label: "Return on assets",
       rule: "0 pts at 0.3%, full at 1.5%",
       run: () => {
-        if (!lf || !bal || !isNum(lf.netIncome) || !isNum(bal.totalAssets) || bal.totalAssets <= 0) return skip("Missing assets");
-        const v = lf.netIncome / bal.totalAssets;
+        const row = m.latest((r) => isNum(r.netIncome)) ?? lf;
+        if (!row || !bal || !isNum(row.netIncome) || !isNum(bal.totalAssets) || bal.totalAssets <= 0) return skip("Missing assets");
+        const v = row.netIncome / bal.totalAssets;
         return {
           score: scale(v, 0.003, 0.015), display: pct(v, 2),
           expert: `Net income over total assets: ${pct(v, 2)}. Around 1% is solid for a bank.`,

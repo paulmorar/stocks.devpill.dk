@@ -117,7 +117,7 @@ The report shows the gap for each stock and each pillar, the overall bias and me
 
 Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fills gaps and adds older years. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
 
-The trailing-12-month (TTM) figures come from the same Yahoo endpoint as the annual reports. `yahoo-finance2` 4.0.x rejects the `periodType: "TTM"` that Yahoo now sends, so the app reads statement rows without the library's schema check and checks each value itself. When Yahoo has no TTM figures for a company, its stock page says the score uses annual reports only.
+The trailing-12-month (TTM) figures come from the same Yahoo endpoint as the annual reports. `yahoo-finance2` 4.0.x rejects the `periodType: "TTM"` that Yahoo now sends, so the app reads statement rows without the library's schema check and checks each value itself. When Yahoo has no TTM figures for a company, its stock page says the score uses annual reports only. Yahoo's TTM row sometimes lacks a single figure that the annual report has, most often interest expense. Checks that need that figure then use the last annual report, and take both sides of a ratio such as interest coverage from that report.
 
 Each stock page has a **How current is this?** panel. The price shows the time the provider set it, never the time you opened the page, so a Friday close still reads as Friday on Monday. Company data, including that price, stays in the server cache for up to 12 hours. A weekly snapshot older than 8 days is flagged, because it means at least one scan was missed.
 

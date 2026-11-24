@@ -238,6 +238,27 @@ describe("currencies", () => {
   });
 });
 
+describe("trailing-12-month rows with gaps", () => {
+  it("takes a value the TTM row lacks from the last annual report, with both sides of a ratio from that report", () => {
+    const c = demo("NWSW");
+    const last = c.annual.at(-1)!;
+    last.interestExpense = last.operatingIncome! / 1.5;
+    const sixMonthsLater = new Date(Date.parse(last.date) + 182 * 86400000).toISOString().slice(0, 10);
+    c.ttm = { ...last, date: sixMonthsLater, operatingIncome: last.operatingIncome! * 1.2, interestExpense: undefined };
+    const coverage = (r: ReturnType<typeof scoreCompany>) => r.pillars.flatMap((p) => p.checks).find((ch) => ch.id === "interest_coverage")!;
+
+    const gap = scoreCompany(c);
+    expect(coverage(gap).skippedReason).toBeUndefined();
+    expect(coverage(gap).display).toBe("1.5×");
+    expect(gap.redFlags.map((f) => f.id)).toContain("low_coverage");
+
+    c.ttm.interestExpense = c.ttm.operatingIncome! / 10;
+    const complete = scoreCompany(c);
+    expect(coverage(complete).display).toBe("10.0×");
+    expect(complete.redFlags.map((f) => f.id)).not.toContain("low_coverage");
+  });
+});
+
 describe("trend states (200-day average)", () => {
   const line = (n: number, f: (i: number) => number) =>
     Array.from({ length: n }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: f(i) }));

@@ -37,8 +37,8 @@ export function notScoredReason(c: CompanyData): string | undefined {
 
 function mainFlags(m: Metrics): RedFlag[] {
   const flags: RedFlag[] = [];
-  const lf = m.latestFlow;
-  if (lf && isNum(lf.netIncome) && lf.netIncome < 0) {
+  const profit = m.latest((r) => isNum(r.netIncome));
+  if (profit && isNum(profit.netIncome) && profit.netIncome < 0) {
     flags.push({ id: "net_loss", label: "Net loss over the last 12 months", explain: {
       expert: `Trailing-12-month net income is negative.`, simple: "The company lost money over the past year." } });
   }
@@ -49,8 +49,10 @@ function mainFlags(m: Metrics): RedFlag[] {
   }
   const shareFlag = dilutionFlag(m);
   if (shareFlag) flags.push(shareFlag);
-  if (lf && isNum(lf.operatingIncome) && isNum(lf.interestExpense) && lf.interestExpense > 0) {
-    const cov = lf.operatingIncome / lf.interestExpense;
+  // Same row as the interest-coverage check, so the check and the flag always agree.
+  const ic = m.latest((r) => isNum(r.operatingIncome) && isNum(r.interestExpense));
+  if (ic && isNum(ic.operatingIncome) && isNum(ic.interestExpense) && ic.interestExpense > 0) {
+    const cov = ic.operatingIncome / ic.interestExpense;
     if (cov < 2) {
       flags.push({ id: "low_coverage", label: "Operating profit covers interest less than 2×", explain: {
         expert: `Interest coverage ${cov.toFixed(1)}×.`, simple: "Its profit barely covers the interest on its debt." } });
@@ -74,9 +76,9 @@ function dilutionFlag(m: Metrics): RedFlag | undefined {
 
 function financialFlags(m: Metrics): RedFlag[] {
   const flags: RedFlag[] = [];
-  const lf = m.latestFlow;
+  const profit = m.latest((r) => isNum(r.netIncome));
   const bal = m.latestBalance;
-  if (lf && isNum(lf.netIncome) && lf.netIncome < 0) {
+  if (profit && isNum(profit.netIncome) && profit.netIncome < 0) {
     flags.push({ id: "net_loss", label: "Net loss over the last 12 months", explain: { expert: "TTM net income is negative.", simple: "It lost money over the past year." } });
   }
   if (bal && isNum(bal.equity) && isNum(bal.totalAssets) && bal.totalAssets > 0 && bal.equity / bal.totalAssets < 0.05) {
