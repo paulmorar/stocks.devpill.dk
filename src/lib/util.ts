@@ -90,6 +90,15 @@ export function money(v: number | undefined, currency = "USD") {
   return `${sign}${sym}${a.toFixed(2)}`;
 }
 
+/** Yahoo quotes London in pence (GBp), Johannesburg in cents (ZAc) and Tel Aviv in agorot (ILA). */
+const MINOR_UNITS: Record<string, string> = { GBp: "GBP", GBX: "GBP", ZAc: "ZAR", ILA: "ILS" };
+
+/** The main unit of a quote currency, and how many quoted units make one main unit (100 pence per pound). */
+export function currencyUnit(code: string): { main: string; perMain: number } {
+  const main = MINOR_UNITS[code];
+  return main ? { main, perMain: 100 } : { main: code, perMain: 1 };
+}
+
 export const isoDate = (d: Date | string | number) => new Date(d).toISOString().slice(0, 10);
 
 /** Ticker as accepted by the API routes and saved lists: Yahoo style, upper case (AAPL, BRK-B, NOVO-B.CO, ^GSPC). */

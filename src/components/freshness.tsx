@@ -23,7 +23,7 @@ export function QuoteTime({ market, now = Date.now() }: { market: MarketSnapshot
 function priceLine(r: LongTermReport, now: number) {
   const m = r.market;
   if (m.price === undefined) return "The data provider returned no price.";
-  const price = `${fx(m.price, 2)} ${r.profile.currency}`;
+  const price = `${fx(m.price, 2)} ${r.profile.tradingCurrency ?? r.profile.currency}`;
   const f = freshness(m.quoteTime, QUOTE_STALE_DAYS, now);
   if (f.state === "unavailable") return `${price}. The data provider did not say when this price was set.`;
   const when = `${price} as of ${formatTimestamp(m.quoteTime as string)} (${formatAge(f.ageMs)}).`;

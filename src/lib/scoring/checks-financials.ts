@@ -1,7 +1,7 @@
 import type { CompanyData, PeriodRow } from "../types";
 import { fx, isNum, mean, pct, scale, signedPct, slope, stdev } from "../util";
 import { type CheckDef, skip } from "./check";
-import { cagrOver, closeAt, currentPE, median, type Metrics, peHistory, roe, series } from "./metrics";
+import { cagrOver, currentPE, median, type Metrics, peHistory, roe, series } from "./metrics";
 
 /**
  * Financials scorecard (marked F): banks, brokers, insurers, asset managers,
@@ -46,7 +46,7 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
       rule: "0 pts at 1.4× its median, full at 0.7×",
       run: () => {
         const pe = currentPE(c, m);
-        const hist = peHistory(m, c.prices, 5);
+        const hist = peHistory(m, 5);
         const med = median(hist);
         if (!isNum(pe)) return skip("No positive trailing earnings");
         if (!isNum(med) || hist.length < 3) return skip("Fewer than 3 years of P/E history");
@@ -67,7 +67,7 @@ export function financialChecks(c: CompanyData, m: Metrics): CheckDef[] {
         if (!isNum(tb) || tb <= 0 || !isNum(m.marketCap)) return skip("No tangible book value");
         const now = m.marketCap / tb;
         const hist = m.annual.slice(-5).map((r) => {
-          const px = closeAt(c.prices, r.date);
+          const px = m.priceAt(r.date);
           const sh = r.sharesOutstanding ?? r.dilutedShares;
           return isNum(px) && isNum(sh) && isNum(r.tangibleBookValue) && r.tangibleBookValue > 0 ? (px * sh) / r.tangibleBookValue : undefined;
         }).filter(isNum);

@@ -1,7 +1,9 @@
 /**
  * Normalized data model. Every provider (Yahoo, FMP, demo) is mapped into
  * these shapes so the scoring engine never touches provider-specific fields.
- * All money values are in the company's reporting currency, absolute units.
+ * Statement values are in the company's reporting currency (`profile.currency`),
+ * absolute units. Prices and other quote values use the trading currency
+ * (`profile.tradingCurrency`); the scoring metrics convert between the two.
  */
 
 export type Source = "yahoo" | "fmp" | "demo";
@@ -62,7 +64,10 @@ export interface DailyBar extends IntradayBar {}
 export interface CompanyProfile {
   symbol: string;
   name: string;
+  /** Currency of the financial reports. */
   currency: string;
+  /** Currency of the share price as quoted, which can be a minor unit (GBp = pence). Same as `currency` when absent. */
+  tradingCurrency?: string;
   exchange?: string;
   quoteType?: string; // EQUITY, ETF, ...
   sector?: string;
@@ -71,6 +76,10 @@ export interface CompanyProfile {
   website?: string;
 }
 
+/**
+ * Quote values in the trading currency. `price` (and the price history) use the quoted unit, so pence for
+ * London; market cap and the per-share EPS estimates use the main unit (pounds).
+ */
 export interface MarketSnapshot {
   price?: number;
   /** When the provider last updated `price` (ISO timestamp). Absent when the provider doesn't say. */
@@ -101,6 +110,8 @@ export interface CompanyData {
   ttm?: PeriodRow;
   /** Daily closes, oldest first (~6 years). */
   prices: PricePoint[];
+  /** Daily exchange rates from the trading currency's main unit to the reporting currency, when the two differ. */
+  fx?: { from: string; to: string; rates: PricePoint[] };
   sources: Source[];
   warnings: string[];
   fetchedAt: string;

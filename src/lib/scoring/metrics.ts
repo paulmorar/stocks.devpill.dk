@@ -1,5 +1,5 @@
 import type { CompanyData, PeriodRow, PricePoint } from "../types";
-import { cagr, clamp, isNum, median } from "../util";
+import { cagr, clamp, currencyUnit, isNum, median } from "../util";
 
 /**
  * Derived series the checks read from. Built once per company.
@@ -15,8 +15,14 @@ export interface Metrics {
   latestFlow?: PeriodRow;
   /** Newest balance-sheet row (TTM rarely has one, so this is usually the last annual). */
   latestBalance?: PeriodRow;
+  /** Share price in the trading currency's main unit (pounds, not pence), like Yahoo's per-share estimates. */
   price?: number;
+  /** Market cap in the reporting currency, so it can be compared with reported cash flows and book value. */
   marketCap?: number;
+  /** Reporting-currency units per main unit of the trading currency today: 1 when they match, undefined without rates. */
+  fxNow?: number;
+  /** Close on or just before `date`, in the reporting currency, for comparing with per-share figures in the reports. */
+  priceAt: (date: string) => number | undefined;
   capexMode: boolean;
 }
 
@@ -36,13 +42,25 @@ export function buildMetrics(c: CompanyData): Metrics {
   const capexRef = latestFlow && isNum(latestFlow.capex) && isNum(latestFlow.da) ? latestFlow : last;
   const capexMode = !!capexRef && isNum(capexRef.capex) && isNum(capexRef.da) && capexRef.da > 0 && capexRef.capex > 2 * capexRef.da;
 
+  const { main, perMain } = currencyUnit(c.profile.tradingCurrency ?? c.profile.currency);
+  const rates = main === c.profile.currency ? undefined : c.fx?.from === main && c.fx.to === c.profile.currency ? c.fx.rates : [];
+  const rateAt = (date: string) => (rates ? closeAt(rates, date) : 1);
+  const fxNow = rates ? rates.at(-1)?.close : 1;
+  const price = c.market.price ?? c.prices.at(-1)?.close;
+
   return {
     annual,
     flows,
     latestFlow,
     latestBalance,
-    price: c.market.price ?? c.prices.at(-1)?.close,
-    marketCap: c.market.marketCap,
+    price: isNum(price) ? price / perMain : undefined,
+    marketCap: isNum(c.market.marketCap) && isNum(fxNow) ? c.market.marketCap * fxNow : undefined,
+    fxNow,
+    priceAt: (date) => {
+      const px = closeAt(c.prices, date);
+      const rate = rateAt(date);
+      return isNum(px) && isNum(rate) ? (px / perMain) * rate : undefined;
+    },
     capexMode,
   };
 }
@@ -110,18 +128,21 @@ export function cagrOver(points: { r: PeriodRow; v: number }[], years: number) {
 }
 
 /** Yearly P/E at each fiscal year end, over the last `years`. */
-export function peHistory(m: Metrics, prices: PricePoint[], years = 5) {
+export function peHistory(m: Metrics, years = 5) {
   const out: number[] = [];
   for (const r of m.annual.slice(-years)) {
-    const px = closeAt(prices, r.date);
+    const px = m.priceAt(r.date);
     if (isNum(px) && isNum(r.eps) && r.eps > 0) out.push(px / r.eps);
   }
   return out;
 }
 
+/** Yahoo's trailing EPS is in the trading currency, like `m.price`; the reported EPS needs the price in the reporting currency. */
 export function currentPE(c: CompanyData, m: Metrics) {
-  const eps = c.market.trailingEps ?? m.latestFlow?.eps;
-  if (isNum(m.price) && isNum(eps) && eps > 0) return m.price / eps;
+  const quoted = c.market.trailingEps !== undefined;
+  const eps = quoted ? c.market.trailingEps : m.latestFlow?.eps;
+  const price = quoted ? m.price : isNum(m.price) && isNum(m.fxNow) ? m.price * m.fxNow : undefined;
+  if (isNum(price) && isNum(eps) && eps > 0) return price / eps;
   if (isNum(c.market.trailingPE) && c.market.trailingPE > 0) return c.market.trailingPE;
   return undefined;
 }

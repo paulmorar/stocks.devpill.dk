@@ -55,6 +55,11 @@ describe("yahoo fundamentalsTimeSeries mapping", () => {
     expect(mapStatementRow({ date: "2024-12-31" })).toBeUndefined();
   });
 
+  it("reads the epoch-second dates of unvalidated results, such as Yahoo's TTM rows", () => {
+    const ttm = { date: Date.parse("2026-09-30T00:00:00Z") / 1000, TYPE: "ALL", periodType: "TTM", totalRevenue: 12, dilutedEPS: 1.5 };
+    expect(mapStatementRow(ttm)).toMatchObject({ fy: 2026, date: "2026-09-30", revenue: 12, eps: 1.5 });
+  });
+
   it("collapses split statement rows of the same year", () => {
     const merged = byYear([row(2024, { revenue: 5 }), row(2024, { equity: 9 }), row(2023, { revenue: 4 })]);
     expect(merged).toHaveLength(2);

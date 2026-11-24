@@ -1,11 +1,12 @@
 import "server-only";
-import type { CompanyData, DailyBar, IntradayBar, PricePoint } from "../types";
+import type { CompanyData, CompanyProfile, DailyBar, IntradayBar, PricePoint } from "../types";
+import { currencyUnit } from "../util";
 import { cached, TTL } from "./cache";
 import { demoBenchmark, demoCompany, demoDaily, demoIntraday, DEMO_SYMBOLS, isDemoSymbol } from "./demo";
 import { fmpAnnual, fmpEnabled } from "./fmp";
 import { mergeAnnual } from "./merge";
 import { applySplits } from "./splits";
-import { yahooCompany, yahooDaily, yahooIntraday, yahooScreener, yahooSearch, type ScreenId, type ScreenerHit } from "./yahoo";
+import { yahooCompany, yahooDaily, yahooFx, yahooIntraday, yahooScreener, yahooSearch, type ScreenId, type ScreenerHit } from "./yahoo";
 
 /**
  * The one entry point the API routes use. Aggregates Yahoo (primary: prices,
@@ -42,9 +43,20 @@ export async function getCompany(symbol: string): Promise<CompanyData> {
     if (!fmpEnabled() && annual.length < 10) {
       warnings.push(`Only ${annual.length} fiscal years from Yahoo; add FMP_API_KEY for the 10-year checks.`);
     }
+    const fx = await exchangeRates(yd.profile, warnings);
     const { splits: _s, ...rest } = yd;
-    return { ...rest, annual, sources, warnings, fetchedAt: new Date().toISOString() };
+    return { ...rest, annual, sources, warnings, fx, fetchedAt: new Date().toISOString() };
   });
+}
+
+/** Rates for converting the share price into the reporting currency, e.g. pounds into dollars for HSBA.L. */
+async function exchangeRates(p: CompanyProfile, warnings: string[]): Promise<CompanyData["fx"]> {
+  const from = currencyUnit(p.tradingCurrency ?? p.currency).main;
+  if (from === p.currency) return undefined;
+  const rates = await cached(`fx:${from}${p.currency}`, TTL.prices, () => yahooFx(from, p.currency)).catch(() => []);
+  if (rates.length) return { from, to: p.currency, rates };
+  warnings.push(`No ${from} to ${p.currency} exchange rate from Yahoo, so checks that compare the share price with the reports were skipped.`);
+  return undefined;
 }
 
 export async function getCloses(symbol: string, days: number): Promise<PricePoint[]> {
