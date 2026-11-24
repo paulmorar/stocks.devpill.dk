@@ -25,7 +25,7 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # scoring, trend, splits, merging, snapshots, ranking filters, SEC filings, data freshness, search, saved lists, news, chart symbols, day-trading signals, auth
+npm test          # scoring, currencies, trend, splits, merging, snapshots, ranking filters, SEC filings, data freshness, search, saved lists, news, chart symbols, day-trading signals, auth
 npm run typecheck
 npm run build
 ```
@@ -93,6 +93,8 @@ Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` a
 
 Locally: `npm run scan -- --limit 30` for a quick test, `npm run scan -- --symbols NVDA,ASML` to rescore a few names inside today's snapshot.
 
+The scan log ends with how many companies came back without trailing-12-month figures. Nearly every company has them, so a large number means Yahoo or `yahoo-finance2` changed and scores are falling back to annual reports.
+
 ## Calibrating against TTT
 
 `src/data/ttt-reference.ts` holds The Traveling Trader's published scores from 8 Nov 2026 (23 "On the Radar" + 19 portfolio holdings). Stock pages that appear there show TTT's numbers next to ours.
@@ -108,14 +110,24 @@ The report shows the gap for each stock and each pillar, the overall bias and me
 
 | Source | Used for | Notes |
 |---|---|---|
-| **Yahoo Finance** via [`yahoo-finance2`](https://github.com/gadicc/yahoo-finance2) v4 | prices (6.5 y daily, 5-min intraday), quote, analyst estimates, profile, statements (`fundamentalsTimeSeries`), screeners, search, news headlines | Server-side only, same pattern as `how-is-my-stock-doing`'s netlify-lambda proxy. Unofficial API: shapes can change. Usually ~4–5 fiscal years of statements. |
+| **Yahoo Finance** via [`yahoo-finance2`](https://github.com/gadicc/yahoo-finance2) v4 | prices (6.5 y daily, 5-min intraday), quote, analyst estimates, profile, statements (`fundamentalsTimeSeries`), daily exchange rates, screeners, search, news headlines | Server-side only, same pattern as `how-is-my-stock-doing`'s netlify-lambda proxy. Unofficial API: shapes can change. Usually ~4–5 fiscal years of statements. |
 | **Financial Modeling Prep** (optional) | longer statement history for the 10-year checks; fills gaps | Set `FMP_API_KEY`. Free plans may cap history at 5 years; the adapter retries with `limit=5`. |
 | **SEC EDGAR** (optional) | links to the latest annual and quarterly filings on stock pages | Never used for scores. Set `SEC_USER_AGENT` (see below). |
 | **TradingView** (on request) | interactive chart on stock pages | Never used for scores. Loads only when you click (see below). |
 
 Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fills gaps and adds older years. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
 
+The trailing-12-month (TTM) figures come from the same Yahoo endpoint as the annual reports. `yahoo-finance2` 4.0.x rejects the `periodType: "TTM"` that Yahoo now sends, so the app reads statement rows without the library's schema check and checks each value itself. When Yahoo has no TTM figures for a company, its stock page says the score uses annual reports only.
+
 Each stock page has a **How current is this?** panel. The price shows the time the provider set it, never the time you opened the page, so a Friday close still reads as Friday on Monday. Company data, including that price, stays in the server cache for up to 12 hours. A weekly snapshot older than 8 days is flagged, because it means at least one scan was missed.
+
+### Currencies
+
+Reported figures stay in the company's reporting currency, and prices stay in the currency the stock trades in. They can differ: ASML trades in dollars in New York but reports in euros, and HSBA.L trades in pence (GBp) in London but reports in dollars. Yahoo quotes London in pence, Johannesburg in cents (ZAc) and Tel Aviv in agorot (ILA), while its market caps and per-share estimates use the main unit.
+
+Checks that compare the price or market cap with reported figures convert the price into the reporting currency first: P/E against its own history, FCF yield, shareholder yield and price-to-tangible-book. They use Yahoo's daily exchange rates, so a past P/E uses the rate on that fiscal year's end. If Yahoo has no rate, those checks are skipped instead of mixing currencies. The stock page labels the price and market cap with the trading currency and notes when the reports use another one.
+
+Known limit: Yahoo gives US-listed ADRs their EPS per ADR but their share count in ordinary shares, so the price-to-tangible-book history of a foreign bank ADR (for example HSBC or LYG) is off by the ADR ratio. Banks listed on their home exchange are not affected.
 
 ### SEC filings
 

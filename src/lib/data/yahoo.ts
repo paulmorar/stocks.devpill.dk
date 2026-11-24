@@ -17,7 +17,9 @@ const yf = new YahooFinance({
 
 async function statements(symbol: string, type: "annual" | "trailing"): Promise<PeriodRow[]> {
   const period1 = new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * (type === "annual" ? 12 : 2));
-  const rows = (await yf.fundamentalsTimeSeries(symbol, { period1, type, module: "all" })) as unknown as Record<
+  // The library's schema rejects Yahoo's current trailing rows (periodType "TTM"), which silently dropped every
+  // trailing-12-month figure. mapStatementRow checks each value itself.
+  const rows = (await yf.fundamentalsTimeSeries(symbol, { period1, type, module: "all" }, { validateResult: false })) as Record<
     string,
     unknown
   >[];
@@ -68,13 +70,14 @@ export async function yahooCompany(symbol: string): Promise<Omit<CompanyData, "f
   let ttm: PeriodRow | undefined;
   if (ttmRes.status === "fulfilled" && ttmRes.value.length) {
     ttm = applySplits(ttmRes.value, splits).at(-1);
-  }
+  } else warnings.push("Yahoo returned no trailing-12-month figures, so the score uses annual reports only.");
 
   return {
     profile: {
       symbol: symbol.toUpperCase(),
       name: price.longName ?? price.shortName ?? symbol.toUpperCase(),
       currency: fin.financialCurrency ?? price.currency ?? "USD",
+      tradingCurrency: price.currency ?? fin.financialCurrency ?? "USD",
       exchange: price.exchangeName,
       quoteType: s.quoteType?.quoteType ?? price.quoteType,
       sector: prof.sector,
@@ -124,6 +127,12 @@ function toBars(quotes: Array<Record<string, unknown>>): IntradayBar[] {
 export async function yahooDaily(symbol: string, days: number): Promise<DailyBar[]> {
   const res = await yf.chart(symbol, { period1: new Date(Date.now() - days * 86400000), interval: "1d" });
   return toBars(res.quotes as unknown as Array<Record<string, unknown>>);
+}
+
+/** Daily closes of an exchange rate (units of `to` per one `from`) over the same ~6.5 years as the price history. */
+export async function yahooFx(from: string, to: string): Promise<PricePoint[]> {
+  const res = await yf.chart(`${from}${to}=X`, { period1: new Date(Date.now() - 1000 * 60 * 60 * 24 * 365 * 6.5), interval: "1d" });
+  return res.quotes.filter((q) => isNum(q.close)).map((q) => ({ date: isoDate(q.date), close: q.close as number }));
 }
 
 /** 5-minute bars for the most recent session (looks back 5 days to cover weekends/holidays). */

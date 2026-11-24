@@ -69,6 +69,7 @@ async function main() {
   console.log(`Scanning ${targets.length} symbols (concurrency ${concurrency}); previous snapshot: ${prevFile ?? "none"}`);
   const rows: RadarRow[] = [];
   const failed: Snapshot["failed"] = [];
+  let withoutTtm = 0;
   const queue = [...targets];
   let done = 0;
   const started = Date.now();
@@ -80,6 +81,7 @@ async function main() {
         try {
           const rep = await withRetry(() => analyzeLongTerm(m.symbol));
           rows.push(toRow(rep, m.index));
+          if (!rep.ttm) withoutTtm++;
         } catch (e) {
           failed.push({ symbol: m.symbol, error: String((e as Error)?.message ?? e).slice(0, 200), index: m.index });
         }
@@ -129,6 +131,8 @@ async function main() {
   const limited = ranked.filter((r) => hasLimitedHistory(r.yearsOfHistory));
   const radar = ranked.filter((r) => r.score >= 80);
   console.log(`\nDone: ${ranked.length} ranked (${limited.length} limited-history), ${snapshot.rows.length - ranked.length} excluded, ${failed.length} failed, ${radar.length} on the radar (80+).`);
+  // Nearly every company has trailing-12-month figures; a high count means Yahoo or the library changed.
+  console.log(`${withoutTtm} of ${rows.length} loaded companies had no trailing-12-month figures.`);
   for (const [i, r] of radar.entries()) {
     const d = r.delta === null || r.delta === undefined ? "new" : r.delta === 0 ? "–" : `${r.delta > 0 ? "▲" : "▼"}${Math.abs(r.delta)}`;
     console.log(`${String(i + 1).padStart(3)} ${r.symbol.padEnd(6)} ${r.score} ${d.padEnd(4)} V${r.pillars.value} G${r.pillars.growth} Q${r.pillars.quality} H${r.pillars.health} ${r.trend ?? ""}`);

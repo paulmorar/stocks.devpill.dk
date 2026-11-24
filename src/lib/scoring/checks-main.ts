@@ -25,7 +25,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       rule: "0 pts at 1.4× its median, full at 0.7×",
       run: () => {
         const pe = currentPE(c, m);
-        const hist = peHistory(m, c.prices, 5);
+        const hist = peHistory(m, 5);
         const med = median(hist);
         if (!isNum(pe)) return skip("No positive trailing earnings");
         if (!isNum(med) || hist.length < 3) return skip("Fewer than 3 years of P/E history");
@@ -66,7 +66,8 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "fwd_vs_trailing", pillar: "value", label: "Forward vs trailing earnings",
       rule: "0 pts at −5%, full at +15% or better",
       run: () => {
-        const t = c.market.trailingEps ?? lf?.eps;
+        // Estimates are in the trading currency; the reported EPS fallback is converted to match.
+        const t = c.market.trailingEps ?? (isNum(lf?.eps) && isNum(m.fxNow) ? lf.eps / m.fxNow : undefined);
         const f = c.market.forwardEps;
         if (!isNum(t) || t <= 0) return skip("No positive trailing EPS");
         if (!isNum(f)) return skip("No forward EPS estimate");

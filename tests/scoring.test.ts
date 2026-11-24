@@ -197,6 +197,47 @@ describe("scoreCompany on demo companies", () => {
   });
 });
 
+describe("currencies", () => {
+  // The same company listed in London: prices in pence, market cap and EPS estimates in pounds, reports in dollars.
+  const gbpUsd = (date: string) => 1.2 + 0.1 * Math.sin(Date.parse(date) / 3e10);
+  function inPence(c: CompanyData): CompanyData {
+    const today = c.prices.at(-1)!.date;
+    const l = structuredClone(c);
+    l.profile.tradingCurrency = "GBp";
+    l.prices = c.prices.map((p) => ({ ...p, close: (p.close / gbpUsd(p.date)) * 100 }));
+    l.market.price = (c.market.price! / gbpUsd(today)) * 100;
+    l.market.marketCap = c.market.marketCap! / gbpUsd(today);
+    l.market.trailingEps = c.market.trailingEps! / gbpUsd(today);
+    l.market.forwardEps = c.market.forwardEps! / gbpUsd(today);
+    l.fx = { from: "GBP", to: "USD", rates: c.prices.map((p) => ({ date: p.date, close: gbpUsd(p.date) })) };
+    return l;
+  }
+  const checks = (c: CompanyData) => scoreCompany(c).pillars.flatMap((p) => p.checks);
+
+  it.each([
+    ["NWSW", ["pe_vs_median", "fwd_vs_trailing", "fcf_yield"]],
+    ["CTSB", ["pe_vs_median", "ptbv_vs_median", "shareholder_yield"]],
+  ])("quoting %s in pence with a moving exchange rate leaves every check unchanged", (symbol, converted) => {
+    const usd = checks(demo(symbol));
+    const gbp = checks(inPence(demo(symbol)));
+    for (const id of converted) expect(usd.find((ch) => ch.id === id)?.skippedReason).toBeUndefined();
+    expect(gbp.map((ch) => [ch.id, ch.skippedReason])).toEqual(usd.map((ch) => [ch.id, ch.skippedReason]));
+    gbp.forEach((ch, i) => {
+      if (usd[i]!.score !== undefined) expect(ch.score).toBeCloseTo(usd[i]!.score as number, 9);
+    });
+    expect(scoreCompany(inPence(demo(symbol))).total).toBe(scoreCompany(demo(symbol)).total);
+  });
+
+  it("skips checks that compare the price with the reports when there is no exchange rate", () => {
+    const c = inPence(demo("NWSW"));
+    delete c.fx;
+    const byId = new Map(checks(c).map((ch) => [ch.id, ch]));
+    expect(byId.get("pe_vs_median")!.skippedReason).toBeDefined();
+    expect(byId.get("fcf_yield")!.skippedReason).toBeDefined();
+    expect(byId.get("fwd_vs_trailing")!.skippedReason).toBeUndefined();
+  });
+});
+
 describe("trend states (200-day average)", () => {
   const line = (n: number, f: (i: number) => number) =>
     Array.from({ length: n }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: f(i) }));

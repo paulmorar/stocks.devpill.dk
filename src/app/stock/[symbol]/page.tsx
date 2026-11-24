@@ -7,7 +7,7 @@ import { getReport, scoreDelta, useRecent, useSnapshot } from "@/lib/client";
 import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
 import { pushRecent } from "@/lib/search";
 import { TREND_ICON } from "@/lib/trend";
-import { fx, money, pct, signedPct } from "@/lib/util";
+import { currencyUnit, fx, money, pct, signedPct } from "@/lib/util";
 import { FilingsPanel } from "@/components/filings";
 import { DataFreshness, QuoteTime } from "@/components/freshness";
 import { AddToLists, usePortfolio, useWatchlist } from "@/components/lists";
@@ -60,7 +60,7 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
 
   const s = r.score;
   const m = r.market;
-  const cur = r.profile.currency;
+  const quoted = r.profile.tradingCurrency ?? r.profile.currency;
 
   return (
     <div className="stack">
@@ -71,14 +71,14 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
           </h1>
           <div className="row small muted">
             <span className="num" style={{ color: "var(--text)", fontSize: 18, fontWeight: 700 }}>
-              {fx(m.price, 2)} {cur}
+              {fx(m.price, 2)} {quoted}
             </span>
             {m.changePct !== undefined && (
               <span className={`num ${m.changePct >= 0 ? "band-green" : "band-red"}`}>{signedPct(m.changePct, 2)}</span>
             )}
             <QuoteTime market={m} />
             <span>{[r.profile.sector, r.profile.industry].filter(Boolean).join(" · ")}</span>
-            {m.marketCap !== undefined && <span>Market cap {money(m.marketCap, cur)}</span>}
+            {m.marketCap !== undefined && <span>Market cap {money(m.marketCap, currencyUnit(quoted).main)}</span>}
             <Chips r={r} />
           </div>
         </div>
@@ -297,6 +297,8 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
 function FinancialTable({ r }: { r: LongTermReport }) {
   const rows = [...r.annual].slice(-10);
   const cur = r.profile.currency;
+  const quoted = r.profile.tradingCurrency ?? cur;
+  const unit = currencyUnit(quoted);
   const cols: { label: string; term?: Parameters<typeof Term>[0]["id"]; get: (x: (typeof rows)[number]) => string }[] = [
     { label: "Revenue", get: (x) => money(x.revenue, cur) },
     { label: "Operating income", get: (x) => money(x.operatingIncome, cur) },
@@ -335,6 +337,13 @@ function FinancialTable({ r }: { r: LongTermReport }) {
           ))}
         </tbody>
       </table>
+      {quoted !== cur && (
+        <p className="tiny muted" style={{ marginTop: 6 }}>
+          Reported in {cur}. The share price is quoted in {quoted}
+          {unit.perMain > 1 && ` (hundredths of a ${unit.main})`}. Checks that compare the price with these figures convert
+          it to {cur} first{unit.main !== cur && ", at the exchange rate of the day"}.
+        </p>
+      )}
     </div>
   );
 }

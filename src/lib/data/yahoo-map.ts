@@ -10,8 +10,10 @@ function f(row: unknown, key: string) {
 }
 
 export function mapStatementRow(row: Record<string, unknown>): PeriodRow | undefined {
-  const date = row.date instanceof Date ? row.date : new Date(String(row.date));
-  if (Number.isNaN(date.getTime())) return undefined;
+  // Validated results carry a Date; unvalidated ones (see yahoo.ts) carry Yahoo's epoch seconds.
+  const iso = isoTimestamp(row.date);
+  if (!iso) return undefined;
+  const date = new Date(iso);
   const r: PeriodRow = {
     fy: date.getUTCFullYear(),
     date: isoDate(date),
