@@ -1,9 +1,10 @@
 import { getScreen, type ScreenId } from "@/lib/data";
 import { fail, json } from "@/lib/api";
 
+// Stock screens only: the app filters out funds, so Yahoo's fund screens (such as portfolio_anchors) would always be empty.
 const ALLOWED: ScreenId[] = [
   "day_gainers", "day_losers", "most_actives", "undervalued_large_caps", "undervalued_growth_stocks",
-  "growth_technology_stocks", "portfolio_anchors", "aggressive_small_caps", "small_cap_gainers",
+  "growth_technology_stocks", "aggressive_small_caps", "small_cap_gainers",
 ];
 
 export async function GET(req: Request) {

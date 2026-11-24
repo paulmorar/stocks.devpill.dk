@@ -44,7 +44,14 @@ function Day() {
   }, []);
   useEffect(() => {
     if (tab === "watchlist") return;
-    fetchJson<{ symbol: string }[]>(`/api/screen?id=${tab}&count=25`).then((h) => setHits(h.map((x) => x.symbol))).catch(() => setHits([]));
+    let current = true;
+    fetchJson<{ symbol: string }[]>(`/api/screen?id=${tab}&count=25`)
+      .then((h) => current && setHits(h.map((x) => x.symbol)))
+      .catch(() => current && setHits([]));
+    // A slower reply for a list chosen earlier must not replace this one.
+    return () => {
+      current = false;
+    };
   }, [tab, refresh]);
 
   const symbols = useMemo(() => {

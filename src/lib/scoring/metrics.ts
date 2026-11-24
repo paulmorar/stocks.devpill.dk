@@ -36,11 +36,8 @@ export function buildMetrics(c: CompanyData): Metrics {
   const annual = [...c.annual].sort((a, b) => a.fy - b.fy);
   const last = annual.at(-1);
   const flows = [...annual];
-  if (c.ttm && (!last || c.ttm.date > last.date)) {
-    // Fractional fiscal year so growth spans stay honest (TTM ending 7 months after FY2025 = 2025.58).
-    const fy = last ? last.fy + (Date.parse(c.ttm.date) - Date.parse(last.date)) / (365.25 * 86400000) : c.ttm.fy;
-    if (!last || fy - last.fy > 0.2) flows.push({ ...c.ttm, fy });
-  }
+  const ttm = newerTtm(last, c.ttm);
+  if (ttm) flows.push(ttm);
   const latestFlow = flows.at(-1);
   const newest = latestFlow !== last ? [latestFlow, last] : [latestFlow];
   const latestBalance = [...annual].reverse().find((r) => isNum(r.equity) || isNum(r.totalAssets)) ?? last;
@@ -71,6 +68,18 @@ export function buildMetrics(c: CompanyData): Metrics {
     },
     capexMode,
   };
+}
+
+/**
+ * The trailing-12-month row as the newest flow period, with a fractional fiscal year so growth spans stay honest
+ * (TTM ending 7 months after FY2025 = 2025.58). Undefined when it ends within about 0.2 years of the last annual
+ * report: then it covers the same period, because that fiscal year has only just ended.
+ */
+export function newerTtm(last: PeriodRow | undefined, ttm: PeriodRow | undefined): PeriodRow | undefined {
+  if (!ttm) return undefined;
+  if (!last) return { ...ttm };
+  const years = (Date.parse(ttm.date) - Date.parse(last.date)) / (365.25 * 86400000);
+  return years > 0.2 ? { ...ttm, fy: last.fy + years } : undefined;
 }
 
 /** Close on or just before a date (prices sorted oldest first). */

@@ -3,6 +3,7 @@
 import type { LongTermReport } from "@/lib/analyze";
 import { COMPANY_CACHE_HOURS, formatAge, formatDuration, formatTimestamp, freshness, QUOTE_STALE_DAYS, SNAPSHOT_STALE_DAYS } from "@/lib/freshness";
 import { rank, type Snapshot } from "@/lib/snapshot";
+import { newerTtm } from "@/lib/scoring/metrics";
 import type { MarketSnapshot, Source } from "@/lib/types";
 import { fx } from "@/lib/util";
 
@@ -36,7 +37,8 @@ function reportsLine(r: LongTermReport) {
   if (!r.annual.length) return "The data provider returned no annual reports.";
   const years = r.annual.map((x) => x.fy);
   const n = r.annual.length;
-  const ttm = r.ttm ? `, plus the trailing 12 months to ${new Date(`${r.ttm.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}` : "";
+  const t = newerTtm(r.annual.at(-1), r.ttm);
+  const ttm = t ? `, plus the trailing 12 months to ${new Date(`${t.date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}` : "";
   return `${n} annual report${n === 1 ? "" : "s"}, FY${Math.min(...years)} to FY${Math.max(...years)}${ttm}.`;
 }
 
