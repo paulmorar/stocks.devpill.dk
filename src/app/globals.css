@@ -154,6 +154,12 @@ tr.click:hover td { background: var(--panel-2); }
 
 .skeleton { background: linear-gradient(90deg, var(--panel) 0%, var(--panel-2) 50%, var(--panel) 100%); background-size: 200% 100%; animation: sh 1.4s infinite; border-radius: var(--radius); }
 @keyframes sh { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* Fades in after 0.4 s, so a refresh that the browser answers at once doesn't flicker. */
+.updating { display: inline-flex; align-items: center; gap: 6px; animation: appear .2s ease .4s both; }
+.updating::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes appear { from { opacity: 0; } }
+@keyframes pulse { from { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .updating::before { animation: none; } }
 
 .footer { border-top: 1px solid var(--line); padding: 18px 0 40px; color: var(--faint); font-size: 12.5px; }
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/client";
+import { LONG_TERM, useCached } from "@/lib/client";
 import type { FilingLinks, FilingPair, FilingsResult } from "@/lib/data/sec-map";
+import { Updating } from "./ui";
 
 const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 const ext = { target: "_blank", rel: "noopener noreferrer" } as const;
@@ -84,26 +84,14 @@ export function FilingsView({ result: r }: { result: FilingsResult }) {
 
 /** Official reports next to the score. Loaded separately, so an SEC problem never blocks the page. */
 export function FilingsPanel({ symbol }: { symbol: string }) {
-  const [result, setResult] = useState<FilingsResult>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    let cancelled = false;
-    setResult(undefined);
-    setError(undefined);
-    fetchJson<FilingsResult>(`/api/filings/${encodeURIComponent(symbol)}`)
-      .then((r) => !cancelled && setResult(r))
-      .catch((e) => !cancelled && setError((e as Error).message));
-    return () => {
-      cancelled = true;
-    };
-  }, [symbol]);
+  const { data: result, error, updating } = useCached<FilingsResult>(`/api/filings/${encodeURIComponent(symbol)}`, LONG_TERM);
   return (
     <section className="panel small">
-      <h3>Company reports (SEC)</h3>
+      <h3>Company reports (SEC) <Updating on={updating} /></h3>
       <p className="tiny muted">
         Official filings from SEC EDGAR. The score takes recent years from Yahoo Finance and can take older years from these filings, so recent figures can differ.
       </p>
-      {error ? <p className="band-red" style={{ margin: 0 }}>Couldn&apos;t load filing links: {error}</p> : result ? <FilingsView result={result} /> : <div className="skeleton" style={{ height: 64 }} />}
+      {result ? <FilingsView result={result} /> : error ? <p className="band-red" style={{ margin: 0 }}>Couldn&apos;t load filing links: {error}</p> : <div className="skeleton" style={{ height: 64 }} />}
     </section>
   );
 }

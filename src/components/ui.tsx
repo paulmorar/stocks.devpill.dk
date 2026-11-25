@@ -158,6 +158,11 @@ export function SkeletonCard() {
   return <div className="skeleton" style={{ height: 178 }} />;
 }
 
+/** Marks cached data on screen while a newer copy loads in the background. */
+export function Updating({ on, children = "Updating…" }: { on: boolean; children?: ReactNode }) {
+  return on ? <span className="updating tiny faint" role="status">{children}</span> : null;
+}
+
 /** Small SVG line chart. Series share one y-axis. */
 export function LineChart({
   data, series, height = 220, xKey,

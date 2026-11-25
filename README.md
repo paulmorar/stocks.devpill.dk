@@ -25,7 +25,7 @@ npm run dev                  # http://localhost:3000
 Offline / UI work: `DEMO_MODE=1 npm run dev` serves six fictional companies, each shaped to exercise a different part of the method (clean high scorer, bank, CAPEX hyperscaler, red-flag retailer, recovering chipmaker, cheap-but-slow pharma).
 
 ```bash
-npm test          # scoring, currencies, trend, splits, merging, snapshots, ranking filters, SEC filings, data freshness, search, saved lists, news, chart symbols, day-trading signals, auth
+npm test          # scoring, currencies, trend, splits, merging, snapshots, ranking filters, SEC filings, data freshness, browser cache, search, saved lists, news, chart symbols, day-trading signals, auth
 npm run typecheck
 npm run build
 ```
@@ -120,6 +120,8 @@ Merging: rows are keyed by period-end year; Yahoo wins field-by-field, SEC EDGAR
 The trailing-12-month (TTM) figures come from the same Yahoo endpoint as the annual reports. `yahoo-finance2` 4.0.x rejects the `periodType: "TTM"` that Yahoo now sends, so the app reads statement rows without the library's schema check and checks each value itself. When Yahoo has no TTM figures for a company, its stock page says the score uses annual reports only. Yahoo's TTM row sometimes lacks a single figure that the annual report has, most often interest expense. Checks that need that figure then use the last annual report, and take both sides of a ratio such as interest coverage from that report.
 
 Each stock page has a **How current is this?** panel. The price shows the time the provider set it, never the time you opened the page, so a Friday close still reads as Friday on Monday. Company data, including that price, stays in the server cache for up to 12 hours. A weekly snapshot older than 8 days is flagged, because it means at least one scan was missed.
+
+The browser keeps the answers too (`src/lib/client.ts`): in memory while the app is open, and in Cache Storage between visits. It doesn't use localStorage, because a score is about 45 KB and a full localStorage would stop the saved lists from saving. Pages show the last answer at once and mark it "Updating…" while a newer one loads, so switching tabs or going back to a page doesn't load everything again. Within a visit, scores, the ranking, screens, filings and news are asked for again after 15 minutes, and day-trading data after 1 minute. An answer from an earlier visit is always checked once. Answers older than 7 days, and day-trading data older than 30 minutes, are not shown. Each deployment starts with an empty cache, so new code never reads data in an old shape, and signing out clears it.
 
 ### Currencies
 
