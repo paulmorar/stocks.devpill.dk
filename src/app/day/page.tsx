@@ -1,16 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { fetchJson, getShort, useMany } from "@/lib/client";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { DAY_TRADING, LONG_TERM, shortUrl, useCached, useMany } from "@/lib/client";
 import type { Setup, ShortTermResult } from "@/lib/shortterm";
 import { positionSize } from "@/lib/shortterm";
 import { fx, money, pct, signedPct } from "@/lib/util";
 import { useWatchlist } from "@/components/lists";
 import { Explain, Only, useMode } from "@/components/mode";
-import { LineChart, Term } from "@/components/ui";
+import { LineChart, Term, Updating } from "@/components/ui";
 
 type Meta = { demo: boolean; fmp?: boolean; demoSymbols: string[] };
+const NO_META: Meta = { demo: false, fmp: false, demoSymbols: [] };
 const LISTS = [
   { id: "most_actives", label: "Most active" },
   { id: "day_gainers", label: "Top gainers" },
@@ -33,26 +35,13 @@ function Day() {
   const router = useRouter();
   const selected = params.get("symbol")?.toUpperCase();
   const wl = useWatchlist();
-  const [meta, setMeta] = useState<Meta>();
+  const metaQ = useCached<Meta>("/api/meta", LONG_TERM);
+  const meta = metaQ.data ?? (metaQ.error ? NO_META : undefined);
   const [tab, setTab] = useState<(typeof LISTS)[number]["id"]>("most_actives");
-  const [hits, setHits] = useState<string[]>([]);
   const [refresh, setRefresh] = useState(0);
   const [onlySetups, setOnlySetups] = useState(false);
-
-  useEffect(() => {
-    fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, demoSymbols: [] }));
-  }, []);
-  useEffect(() => {
-    if (tab === "watchlist") return;
-    let current = true;
-    fetchJson<{ symbol: string }[]>(`/api/screen?id=${tab}&count=25`)
-      .then((h) => current && setHits(h.map((x) => x.symbol)))
-      .catch(() => current && setHits([]));
-    // A slower reply for a list chosen earlier must not replace this one.
-    return () => {
-      current = false;
-    };
-  }, [tab, refresh]);
+  const listQ = useCached<{ symbol: string }[]>(tab === "watchlist" ? undefined : `/api/screen?id=${tab}&count=25`, DAY_TRADING, refresh);
+  const hits = useMemo(() => listQ.data?.map((x) => x.symbol) ?? [], [listQ.data]);
 
   const symbols = useMemo(() => {
     if (!meta) return [];
@@ -60,7 +49,7 @@ function Day() {
     return tab === "watchlist" ? wl.list : hits;
   }, [meta, tab, wl.list, hits]);
 
-  const { data, errors, pending } = useMany<ShortTermResult>(symbols, getShort, 4, refresh);
+  const { data, errors, pending, updating } = useMany<ShortTermResult>(symbols, shortUrl, DAY_TRADING, 4, refresh);
   const rows = symbols
     .map((s) => data[s])
     .filter((r): r is ShortTermResult => !!r)
@@ -87,6 +76,7 @@ function Day() {
         <div className="row between">
           <h2 style={{ marginBottom: 0 }}>{mode === "expert" ? "Scanner" : "What's moving today"}</h2>
           <div className="row small">
+            <Updating on={updating > 0 || listQ.updating} />
             <label className="row" style={{ gap: 6 }}>
               <input type="checkbox" checked={onlySetups} onChange={(e) => setOnlySetups(e.target.checked)} /> Only with a long setup
             </label>
@@ -156,8 +146,8 @@ function Day() {
 
 function Detail({ symbol, onClose }: { symbol: string; onClose: () => void }) {
   const { mode } = useMode();
-  const [r, setR] = useState<ShortTermResult>();
-  const [err, setErr] = useState<string>();
+  const { data: r, error: err, updating } = useCached<ShortTermResult>(shortUrl(symbol), DAY_TRADING);
+  const filled = useRef<string | undefined>(undefined);
   const [calc, setCalc] = useState<{ entry: string; stop: string }>({ entry: "", stop: "" });
   const [account, setAccount] = useState("10000");
   const [riskPct, setRiskPct] = useState("1");
@@ -168,17 +158,13 @@ function Detail({ symbol, onClose }: { symbol: string; onClose: () => void }) {
       setRiskPct(localStorage.getItem("scout:risk") ?? "1");
     } catch {}
   }, []);
+  // Suggest an entry and a stop once per stock: a background refresh must not overwrite what was typed.
   useEffect(() => {
-    setR(undefined);
-    setErr(undefined);
-    getShort(symbol)
-      .then((x) => {
-        setR(x);
-        const first = x.setups.find((s) => s.entry && s.stop);
-        setCalc(first ? { entry: fx(first.entry, 2), stop: fx(first.stop, 2) } : { entry: fx(x.last, 2), stop: x.atr ? fx(x.last - x.atr, 2) : "" });
-      })
-      .catch((e) => setErr(e.message));
-  }, [symbol]);
+    if (!r || filled.current === symbol) return;
+    filled.current = symbol;
+    const first = r.setups.find((s) => s.entry && s.stop);
+    setCalc(first ? { entry: fx(first.entry, 2), stop: fx(first.stop, 2) } : { entry: fx(r.last, 2), stop: r.atr ? fx(r.last - r.atr, 2) : "" });
+  }, [r, symbol]);
 
   const size = positionSize(Number(account), Number(riskPct) / 100, Number(calc.entry), Number(calc.stop));
   const saveAcc = (v: string) => {
@@ -194,7 +180,7 @@ function Detail({ symbol, onClose }: { symbol: string; onClose: () => void }) {
     } catch {}
   };
 
-  if (err) return <section className="panel band-red">Couldn&apos;t load {symbol}: {err}</section>;
+  if (err && !r) return <section className="panel band-red">Couldn&apos;t load {symbol}: {err}</section>;
   if (!r) return <div className="skeleton" style={{ height: 320 }} />;
 
   return (
@@ -205,10 +191,10 @@ function Detail({ symbol, onClose }: { symbol: string; onClose: () => void }) {
             {symbol} <span className="num">{fx(r.last, 2)}</span>{" "}
             <span className={`num ${r.changePct >= 0 ? "band-green" : "band-red"}`}>{signedPct(r.changePct, 2)}</span>
           </h2>
-          <div className="tiny faint">Session {r.sessionDate ?? "—"} · prior close {fx(r.prevClose, 2)}</div>
+          <div className="tiny faint">Session {r.sessionDate ?? "—"} · prior close {fx(r.prevClose, 2)} <Updating on={updating} /></div>
         </div>
         <div className="row">
-          <a className="btn" href={`/stock/${encodeURIComponent(symbol)}`}>Long-term score</a>
+          <Link className="btn" href={`/stock/${encodeURIComponent(symbol)}`}>Long-term score</Link>
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>

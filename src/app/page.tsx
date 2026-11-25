@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson, getReport, scoreDelta, useMany, useSnapshot } from "@/lib/client";
+import { LONG_TERM, reportUrl, scoreDelta, useCached, useMany, useSnapshot } from "@/lib/client";
 import type { LongTermReport } from "@/lib/analyze";
 import { applyFilters, availableUniverses, DEFAULT_FILTERS, filtersToParams, type Filters, inUniverse, overview, parseFilters, UNIVERSES } from "@/lib/explore";
 import { COMPANY_CACHE_HOURS } from "@/lib/freshness";
@@ -14,9 +14,10 @@ import { ListsSync, NamedLists, useLists, usePortfolio, useWatchlist } from "@/c
 import { Only, useMode } from "@/components/mode";
 import { ListNews } from "@/components/news";
 import { RankTable } from "@/components/rank-table";
-import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
+import { Disclaimer, ScoreCardMini, SkeletonCard, Term, Updating } from "@/components/ui";
 
 type Meta = { demo: boolean; fmp: boolean; sec: boolean; demoSymbols: string[] };
+const NO_META: Meta = { demo: false, fmp: false, sec: false, demoSymbols: [] };
 type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "lists" | "discover";
 type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "aggressive_small_caps" | "undervalued_growth_stocks";
 
@@ -44,12 +45,11 @@ export default function Home() {
   const wl = useWatchlist();
   const pf = usePortfolio();
   const lists = useLists();
-  const { snap, error: snapErr } = useSnapshot();
-  const [meta, setMeta] = useState<Meta>();
+  const { snap, error: snapErr, updating: snapUpdating } = useSnapshot();
+  const metaQ = useCached<Meta>("/api/meta", LONG_TERM);
+  const meta = metaQ.data ?? (metaQ.error ? NO_META : undefined);
   const [tab, setTab] = useState<Tab>("radar");
   const [screenId, setScreenId] = useState<ScreenId>("undervalued_large_caps");
-  const [screen, setScreen] = useState<string[]>([]);
-  const [screenErr, setScreenErr] = useState<string>();
   const [view, setView] = useState<"table" | "cards">("table");
   const [page, setPage] = useState(0);
   const [filters, setFiltersState] = useState<Filters>(DEFAULT_FILTERS);
@@ -60,7 +60,6 @@ export default function Home() {
   const selectedList = named.find((l) => l.id === listId) ?? named[0];
 
   useEffect(() => {
-    fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, sec: false, demoSymbols: [] }));
     // A shared or reopened URL wins over the tab remembered in this browser.
     const params = new URLSearchParams(window.location.search);
     setFiltersState(parseFilters(params));
@@ -106,19 +105,9 @@ export default function Home() {
     } catch {}
   };
 
-  useEffect(() => {
-    if (tab !== "discover" || meta?.demo) return;
-    let current = true;
-    setScreen([]);
-    setScreenErr(undefined);
-    fetchJson<{ symbol: string }[]>(`/api/screen?id=${screenId}&count=25`)
-      .then((h) => current && setScreen(h.map((x) => x.symbol)))
-      .catch((e) => current && setScreenErr(e.message));
-    // A slower reply for a screen chosen earlier must not replace this one.
-    return () => {
-      current = false;
-    };
-  }, [tab, screenId, meta?.demo]);
+  const screenQ = useCached<{ symbol: string }[]>(tab === "discover" && !meta?.demo ? `/api/screen?id=${screenId}&count=25` : undefined, LONG_TERM);
+  const screen = useMemo(() => screenQ.data?.map((x) => x.symbol) ?? [], [screenQ.data]);
+  const screenErr = screenQ.error;
 
   const snapshotTab = tab === "radar" || tab === "ranking";
   const snapRows = useMemo(() => rank(snap?.rows ?? []), [snap]);
@@ -141,7 +130,7 @@ export default function Home() {
     if (tab === "lists") return selectedList?.symbols ?? [];
     return screen;
   }, [meta, snapshotTab, tab, pf.ready, pf.list, wl.ready, wl.list, selectedList, screen]);
-  const { data, errors, pending } = useMany<LongTermReport>(liveSymbols, getReport, 3);
+  const { data, errors, pending, updating } = useMany<LongTermReport>(liveSymbols, reportUrl, LONG_TERM, 3);
 
   const [localDeltas, setLocalDeltas] = useState<Record<string, number | undefined>>({});
   useEffect(() => {
@@ -251,6 +240,9 @@ export default function Home() {
             <div className="small muted">{subtitle}</div>
             {snapshotTab && snap?.previousDate && <div className="tiny faint">▲▼ vs {fmtDate(snap.previousDate)}</div>}
             {!snapshotTab && <div className="tiny faint">Company data is cached for up to {COMPANY_CACHE_HOURS} hours.</div>}
+            <Updating on={snapshotTab ? snapUpdating : updating > 0 || screenQ.updating}>
+              {snapshotTab ? "Checking for a newer ranking…" : updating > 0 ? `Updating ${updating} score${updating === 1 ? "" : "s"}…` : "Updating the list…"}
+            </Updating>
           </div>
         </div>
 

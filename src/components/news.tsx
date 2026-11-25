@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchJson } from "@/lib/client";
+import { useState } from "react";
+import { LONG_TERM, useCached } from "@/lib/client";
 import type { NewsResult } from "@/lib/data/news-map";
 import { formatAge, formatTimestamp } from "@/lib/freshness";
+import { Updating } from "./ui";
 
 const MAX_SYMBOLS = 12;
 
@@ -45,33 +46,20 @@ export function NewsView({ result, subject, showSymbols = false, now = Date.now(
 }
 
 function useNews(symbols: string[], enabled: boolean) {
-  const [result, setResult] = useState<NewsResult>();
-  const [error, setError] = useState<string>();
   const key = symbols.slice(0, MAX_SYMBOLS).join(",");
-  useEffect(() => {
-    if (!enabled || !key) return;
-    let cancelled = false;
-    setResult(undefined);
-    setError(undefined);
-    fetchJson<NewsResult>(`/api/news?symbols=${encodeURIComponent(key)}`)
-      .then((r) => !cancelled && setResult(r))
-      .catch((e) => !cancelled && setError((e as Error).message));
-    return () => {
-      cancelled = true;
-    };
-  }, [key, enabled]);
-  return { result, error };
+  const { data: result, error, updating } = useCached<NewsResult>(enabled && key ? `/api/news?symbols=${encodeURIComponent(key)}` : undefined, LONG_TERM);
+  return { result, error, updating };
 }
 
 const NOTE = "Headlines from Yahoo Finance, linked to the original stories. They are not part of the score.";
 
 export function StockNews({ symbol }: { symbol: string }) {
-  const { result, error } = useNews([symbol], true);
+  const { result, error, updating } = useNews([symbol], true);
   return (
     <section className="panel small">
-      <h3>Recent news</h3>
+      <h3>Recent news <Updating on={updating} /></h3>
       <p className="tiny muted">{NOTE}</p>
-      {error ? <p className="band-red" style={{ margin: 0 }}>Couldn&apos;t load news: {error}</p> : result ? <NewsView result={result} subject={symbol} /> : <div className="skeleton" style={{ height: 90 }} />}
+      {result ? <NewsView result={result} subject={symbol} /> : error ? <p className="band-red" style={{ margin: 0 }}>Couldn&apos;t load news: {error}</p> : <div className="skeleton" style={{ height: 90 }} />}
     </section>
   );
 }
@@ -79,17 +67,17 @@ export function StockNews({ symbol }: { symbol: string }) {
 /** News for a list of stocks, fetched only when opened so browsing lists costs no news requests. */
 export function ListNews({ symbols, name }: { symbols: string[]; name: string }) {
   const [open, setOpen] = useState(false);
-  const { result, error } = useNews(symbols, open);
+  const { result, error, updating } = useNews(symbols, open);
   if (!symbols.length) return null;
   return (
     <details className="small" style={{ marginTop: 12 }} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary style={{ cursor: "pointer" }}>Recent news for {name}</summary>
+      <summary style={{ cursor: "pointer" }}>Recent news for {name} <Updating on={updating} /></summary>
       <div style={{ marginTop: 8 }}>
         <p className="tiny muted">
           {NOTE}
           {symbols.length > MAX_SYMBOLS && ` Showing the first ${MAX_SYMBOLS} of ${symbols.length} stocks.`}
         </p>
-        {error ? <p className="band-red">Couldn&apos;t load news: {error}</p> : result ? <NewsView result={result} subject="these stocks" showSymbols /> : open && <div className="skeleton" style={{ height: 90 }} />}
+        {result ? <NewsView result={result} subject="these stocks" showSymbols /> : error ? <p className="band-red">Couldn&apos;t load news: {error}</p> : open && <div className="skeleton" style={{ height: 90 }} />}
       </div>
     </details>
   );

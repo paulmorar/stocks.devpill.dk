@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { fetchJson, useRecent } from "@/lib/client";
+import { clearClientCache, fetchJson, useRecent } from "@/lib/client";
 import { isSearchShortcut, latestGate, moveHighlight } from "@/lib/search";
 import { usePortfolio, useWatchlist } from "./lists";
 import { ModeToggle } from "./mode";
@@ -211,7 +211,16 @@ export function Header({ authOn = false }: { authOn?: boolean }) {
         <SearchBox />
         <ModeToggle />
         {authOn && (
-          <form method="post" action="/api/auth/logout">
+          <form
+            method="post"
+            action="/api/auth/logout"
+            onSubmit={(e) => {
+              // Forget the data cached in this browser first. form.submit() doesn't fire this handler again.
+              e.preventDefault();
+              const form = e.currentTarget;
+              void clearClientCache().finally(() => form.submit());
+            }}
+          >
             <button className="linkish" type="submit" title="Sign out">Sign out</button>
           </form>
         )}

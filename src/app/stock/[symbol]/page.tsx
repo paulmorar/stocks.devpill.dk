@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import type { LongTermReport } from "@/lib/analyze";
-import { getReport, scoreDelta, useRecent, useSnapshot } from "@/lib/client";
+import { LONG_TERM, reportUrl, scoreDelta, useCached, useRecent, useSnapshot } from "@/lib/client";
 import { tttRef, TTT_REFERENCE_DATE } from "@/data/ttt-reference";
 import { pushRecent } from "@/lib/search";
 import { newerTtm } from "@/lib/scoring/metrics";
@@ -15,7 +15,7 @@ import { AddToLists, usePortfolio, useWatchlist } from "@/components/lists";
 import { Explain, Only, useMode } from "@/components/mode";
 import { StockNews } from "@/components/news";
 import { InteractiveChart } from "@/components/tv-chart";
-import { Chips, Disclaimer, LineChart, RocketGauge, Term, TrendBadge } from "@/components/ui";
+import { Chips, Disclaimer, LineChart, RocketGauge, Term, TrendBadge, Updating } from "@/components/ui";
 
 export default function StockPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { symbol: raw } = use(params);
@@ -25,25 +25,22 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
   const pf = usePortfolio();
   const recent = useRecent();
   const { snap, error: snapError } = useSnapshot();
-  const [r, setR] = useState<LongTermReport>();
-  const [err, setErr] = useState<string>();
+  const { data: r, error: err, updating } = useCached<LongTermReport>(reportUrl(symbol), LONG_TERM);
   const [delta, setDelta] = useState<number>();
+  const recorded = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    setR(undefined);
-    setErr(undefined);
-    getReport(symbol)
-      .then((rep) => {
-        setR(rep);
-        // Only symbols that actually loaded go into the search box's recent list.
-        recent.update((l) => pushRecent(l, symbol));
-        if (rep.score.scorable) setDelta(scoreDelta(symbol, rep.score.total));
-      })
-      .catch((e) => setErr(e.message));
+    if (!r) return;
+    // Only symbols that actually loaded go into the search box's recent list.
+    if (recorded.current !== symbol) {
+      recorded.current = symbol;
+      recent.update((l) => pushRecent(l, symbol));
+    }
+    setDelta(r.score.scorable ? scoreDelta(symbol, r.score.total) : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol]);
+  }, [r, symbol]);
 
-  if (err) {
+  if (err && !r) {
     return (
       <div className="panel">
         <h1>{symbol}</h1>
@@ -78,6 +75,7 @@ export default function StockPage({ params }: { params: Promise<{ symbol: string
               <span className={`num ${m.changePct >= 0 ? "band-green" : "band-red"}`}>{signedPct(m.changePct, 2)}</span>
             )}
             <QuoteTime market={m} />
+            <Updating on={updating} />
             <span>{[r.profile.sector, r.profile.industry].filter(Boolean).join(" · ")}</span>
             {m.marketCap !== undefined && <span>Market cap {money(m.marketCap, currencyUnit(quoted).main)}</span>}
             <Chips r={r} />
