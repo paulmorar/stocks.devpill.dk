@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </main>
             <footer className="footer">
               <div className="wrap">
-                Educational tool, not investment advice. Data from Yahoo Finance (unofficial) and, if configured, Financial Modeling Prep; may be delayed or wrong.
+                Educational tool, not investment advice. Data from Yahoo Finance (unofficial) and, if configured, SEC EDGAR and Financial Modeling Prep; may be delayed or wrong.
                 Scoring inspired by The Traveling Trader&apos;s TTT Score methodology; thresholds are this app&apos;s own.
               </div>
             </footer>

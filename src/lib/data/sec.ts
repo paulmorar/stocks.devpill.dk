@@ -4,11 +4,11 @@ import { cached, TTL } from "./cache";
 import { demoMode } from "./index";
 import { isDemoSymbol } from "./demo";
 import { cikFor, edgarLinks, type Filings, type FilingsResult, isForeignListing, padCik, parseSubmissions, secUserAgent } from "./sec-map";
+import type { CompanyFacts } from "./sec-facts";
 
 /**
- * Latest annual and quarterly report links from SEC EDGAR. Independent of
- * scoring: a failure here never affects a score. Only S&P 500 / Nasdaq-100
- * members have a CIK on file (src/data/universe.json).
+ * Latest annual and quarterly report links from SEC EDGAR, and the company facts behind the older years of the
+ * statement history. Only S&P 500 / Nasdaq-100 members have a CIK on file (src/data/universe.json).
  */
 
 const TIMEOUT_MS = 8000;
@@ -58,5 +58,33 @@ export async function getFilings(symbol: string, env: Record<string, string | un
     failedUntil.set(key, Date.now() + RETRY_AFTER_MS);
     const timedOut = (e as { name?: string })?.name === "TimeoutError";
     return { status: "unavailable", symbol: sym, cik, links, reason: timedOut ? "SEC EDGAR did not respond in time." : String((e as Error)?.message ?? e) };
+  }
+}
+
+/**
+ * Every figure the company has tagged in its filings (data.sec.gov/api/xbrl/companyfacts), or undefined when there
+ * is nothing to ask: no CIK on file, or SEC_USER_AGENT isn't set. Throws when SEC fails. The caller keeps only the
+ * mapped rows, because the files run to several MB.
+ */
+export async function secCompanyFacts(symbol: string, env: Record<string, string | undefined> = process.env): Promise<CompanyFacts | undefined> {
+  const cik = cikFor(universe.members as { symbol: string; cik?: string }[], symbol);
+  const ua = secUserAgent(env);
+  if (!cik || !ua) return undefined;
+  const key = `facts:${padCik(cik)}`;
+  if ((failedUntil.get(key) ?? 0) > Date.now()) throw new Error("SEC EDGAR did not respond a few minutes ago");
+  try {
+    await pace();
+    const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${padCik(cik)}.json`, {
+      headers: { "User-Agent": ua, Accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      cache: "no-store",
+    });
+    if (res.status === 404) return undefined;
+    if (res.status === 403) throw new Error("SEC refused the request. Check that SEC_USER_AGENT names the app and a contact email.");
+    if (!res.ok) throw new Error(`SEC EDGAR returned HTTP ${res.status}`);
+    return (await res.json()) as CompanyFacts;
+  } catch (e) {
+    failedUntil.set(key, Date.now() + RETRY_AFTER_MS);
+    throw (e as { name?: string })?.name === "TimeoutError" ? new Error("SEC EDGAR did not respond in time") : e;
   }
 }

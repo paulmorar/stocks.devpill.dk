@@ -16,7 +16,7 @@ import { ListNews } from "@/components/news";
 import { RankTable } from "@/components/rank-table";
 import { Disclaimer, ScoreCardMini, SkeletonCard, Term } from "@/components/ui";
 
-type Meta = { demo: boolean; fmp: boolean; demoSymbols: string[] };
+type Meta = { demo: boolean; fmp: boolean; sec: boolean; demoSymbols: string[] };
 type Tab = "radar" | "ranking" | "portfolio" | "watchlist" | "lists" | "discover";
 type ScreenId = "undervalued_large_caps" | "growth_technology_stocks" | "aggressive_small_caps" | "undervalued_growth_stocks";
 
@@ -60,7 +60,7 @@ export default function Home() {
   const selectedList = named.find((l) => l.id === listId) ?? named[0];
 
   useEffect(() => {
-    fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, demoSymbols: [] }));
+    fetchJson<Meta>("/api/meta").then(setMeta).catch(() => setMeta({ demo: false, fmp: false, sec: false, demoSymbols: [] }));
     // A shared or reopened URL wins over the tab remembered in this browser.
     const params = new URLSearchParams(window.location.search);
     setFiltersState(parseFilters(params));
@@ -213,9 +213,9 @@ export default function Home() {
           </p>
         </Only>
         {meta?.demo && <div className="banner info small" style={{ marginTop: 8 }}>Demo mode: fictional sample companies with made-up numbers.</div>}
-        {meta && !meta.demo && !meta.fmp && (
+        {meta && !meta.demo && !meta.fmp && !meta.sec && (
           <p className="tiny faint" style={{ marginTop: 6, marginBottom: 0 }}>
-            Using Yahoo data only. An optional <code>FMP_API_KEY</code> can add the longer history needed for 10-year checks.
+            Using Yahoo data only, about 4 years of reports. Set <code>SEC_USER_AGENT</code> to add up to 10 years from SEC EDGAR for US companies.
           </p>
         )}
       </section>

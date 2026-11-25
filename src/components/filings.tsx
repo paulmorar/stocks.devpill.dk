@@ -101,7 +101,7 @@ export function FilingsPanel({ symbol }: { symbol: string }) {
     <section className="panel small">
       <h3>Company reports (SEC)</h3>
       <p className="tiny muted">
-        Official filings from SEC EDGAR. The score uses market-data providers, not these documents, so figures can differ.
+        Official filings from SEC EDGAR. The score takes recent years from Yahoo Finance and can take older years from these filings, so recent figures can differ.
       </p>
       {error ? <p className="band-red" style={{ margin: 0 }}>Couldn&apos;t load filing links: {error}</p> : result ? <FilingsView result={result} /> : <div className="skeleton" style={{ height: 64 }} />}
     </section>

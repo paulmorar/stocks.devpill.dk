@@ -119,7 +119,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       rule: "0 pts at 0%/yr, full at 12%/yr",
       run: () => {
         const g = cagrOver(series(m.annual, (r) => r.revenue), 10);
-        if (!g || g.span < 8) return skip("Fewer than 8 years of revenue (add an FMP key for more)");
+        if (!g || g.span < 8) return skip("Fewer than 8 years of revenue");
         return {
           score: scale(g.g, 0, 0.12),
           display: `${signedPct(g.g, 1)}/yr`,
@@ -198,7 +198,9 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
       id: "roic_durability", pillar: "quality", label: "ROIC durability",
       rule: "Share of years with ROIC ≥ 15% (70%) plus median ROIC (30%)",
       run: () => {
-        const vals = m.annual.slice(-10).map((r) => roic(r)).filter(isNum);
+        // A year without its cash, or without its debt at a company that borrows, would overstate or understate ROIC.
+        const borrows = m.annual.some((r) => (r.totalDebt ?? 0) > 0);
+        const vals = m.annual.slice(-10).filter((r) => isNum(r.cash) && (isNum(r.totalDebt) || !borrows)).map((r) => roic(r)).filter(isNum);
         if (vals.length < 4) return skip("Fewer than 4 years of ROIC");
         const good = vals.filter((v) => v >= 0.15).length;
         const med = median(vals) as number;

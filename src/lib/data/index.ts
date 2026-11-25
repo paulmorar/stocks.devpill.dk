@@ -1,17 +1,20 @@
 import "server-only";
-import type { CompanyData, CompanyProfile, DailyBar, IntradayBar, PricePoint } from "../types";
+import type { CompanyData, CompanyProfile, DailyBar, IntradayBar, PeriodRow, PricePoint } from "../types";
 import { currencyUnit } from "../util";
 import { cached, TTL } from "./cache";
 import { demoBenchmark, demoCompany, demoDaily, demoIntraday, DEMO_SYMBOLS, isDemoSymbol } from "./demo";
 import { fmpAnnual, fmpEnabled } from "./fmp";
 import { mergeAnnual } from "./merge";
+import { secCompanyFacts } from "./sec";
+import { secAnnual } from "./sec-facts";
+import { secUserAgent } from "./sec-map";
 import { applySplits } from "./splits";
 import { yahooCompany, yahooDaily, yahooFx, yahooIntraday, yahooScreener, yahooSearch, type ScreenId, type ScreenerHit } from "./yahoo";
 
 /**
- * The one entry point the API routes use. Aggregates Yahoo (primary: prices,
- * quotes, recent statements, estimates) with FMP (optional: longer statement
- * history), or serves demo data.
+ * The one entry point the API routes use. Aggregates Yahoo (primary: prices, quotes, recent statements, estimates)
+ * with SEC EDGAR (older annual figures of US companies) and FMP (optional: longer statement history), or serves
+ * demo data.
  */
 
 export const demoMode = () => process.env.DEMO_MODE === "1";
@@ -25,23 +28,36 @@ export async function getCompany(symbol: string): Promise<CompanyData> {
     return d;
   }
   return cached(`company:${sym}`, TTL.fundamentals, async () => {
-    const [y, f] = await Promise.allSettled([
+    const [y, f, s] = await Promise.allSettled([
       yahooCompany(sym),
       fmpEnabled() ? fmpAnnual(sym) : Promise.resolve(undefined),
+      secCompanyFacts(sym),
     ]);
     if (y.status === "rejected") throw y.reason;
     const yd = y.value;
     const warnings = [...yd.warnings];
-    let annual = yd.annual;
     const sources = [...yd.sources];
+    // Yahoo wins field by field; SEC fills gaps and adds older years (only figures that join Yahoo's), FMP the rest.
+    const secRows = s.status === "fulfilled" && s.value ? secAnnual(s.value, yd.annual, yd.profile.currency, yd.profile.listedSince) : [];
+    const lists: PeriodRow[][] = [yd.annual, secRows];
+    if (s.status === "rejected") warnings.push(`SEC EDGAR unavailable (${String((s.reason as Error)?.message ?? s.reason).slice(0, 80)}); using Yahoo's reports only.`);
     if (f.status === "fulfilled" && f.value?.length) {
-      annual = mergeAnnual(yd.annual, applySplits(f.value, yd.splits));
+      lists.push(applySplits(f.value, yd.splits));
       sources.push("fmp");
     } else if (f.status === "rejected") {
       warnings.push(`FMP unavailable (${String((f.reason as Error)?.message ?? f.reason).slice(0, 80)}); using Yahoo only.`);
     }
-    if (!fmpEnabled() && annual.length < 10) {
-      warnings.push(`Only ${annual.length} fiscal years from Yahoo; add FMP_API_KEY for the 10-year checks.`);
+    const annual = mergeAnnual(...lists);
+    if (annual.some((r) => r.sources.includes("sec"))) sources.push("sec");
+    if (annual.length < 10 && annual.length === yd.annual.length && s.status === "fulfilled" && !sources.includes("fmp")) {
+      const why = !s.value
+        ? secUserAgent()
+          ? "There is no SEC company number on file for it (we keep them for the S&P 500 and Nasdaq-100), so SEC EDGAR can't add older years."
+          : "Set SEC_USER_AGENT to add up to 10 years from SEC EDGAR."
+        : secRows.length
+          ? "SEC EDGAR has no comparable older years for it, for example after a spin-off or a sale."
+          : "SEC EDGAR has no US-GAAP figures for it that match Yahoo's, so they weren't used.";
+      warnings.push(`Only ${annual.length} fiscal years of reports. ${why}`);
     }
     const fx = await exchangeRates(yd.profile, warnings);
     const { splits: _s, ...rest } = yd;

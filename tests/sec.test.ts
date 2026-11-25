@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FilingsPanel, FilingsView } from "@/components/filings";
 import { parseCsvLine } from "@/lib/csv";
 import { cikFor, edgarLinks, type FilingsResult, isForeignListing, padCik, parseSubmissions, secUserAgent } from "@/lib/data/sec-map";
+import { type CompanyFacts, type SecFact, secAnnual } from "@/lib/data/sec-facts";
+import type { PeriodRow } from "@/lib/types";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/data/universe.json", () => ({
@@ -138,7 +140,7 @@ describe("getFilings", () => {
 describe("filings panel", () => {
   const links = edgarLinks("AAPL", "320193");
 
-  it("labels an amendment on its own line and says filings are not the score's source", () => {
+  it("labels an amendment on its own line and says which years of the score come from filings", () => {
     const filings = parseSubmissions("320193", {
       name: "Apple Inc.",
       filings: { recent: recent([["10-K/A", "2025-12-01"], ["10-K", "2025-10-31", "2025-09-27"]]) },
@@ -148,7 +150,7 @@ describe("filings panel", () => {
     expect(html).toContain("Form 10-K, filed Oct 31, 2025");
     expect(html).toContain("Amendment");
     expect(html).toContain("Form 10-K/A, filed Dec 1, 2025");
-    expect(renderToStaticMarkup(createElement(FilingsPanel, { symbol: "AAPL" }))).toContain("not these documents");
+    expect(renderToStaticMarkup(createElement(FilingsPanel, { symbol: "AAPL" }))).toContain("recent years from Yahoo Finance and can take older years from these filings");
   });
 
   it("explains why details are missing and still links to EDGAR", () => {
@@ -161,5 +163,89 @@ describe("filings panel", () => {
       expect(html).toContain(text);
       expect(html).toContain("browse-edgar");
     }
+  });
+});
+
+describe("SEC company facts", () => {
+  /** One fiscal year (calendar year) as tagged in the annual report filed the next February. */
+  const year = (fy: number, val: number, accn = `A${fy}`): SecFact => ({ start: `${fy}-01-01`, end: `${fy}-12-31`, val, accn, form: "10-K", filed: `${Number(accn.slice(1)) + 1}-02-15` });
+  const facts = (concepts: Record<string, Record<string, SecFact[]>>): CompanyFacts => ({
+    facts: { "us-gaap": Object.fromEntries(Object.entries(concepts).map(([k, units]) => [k, { units }])) },
+  });
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const revenue = (fy: number) => 100e9 * 1.1 ** (fy - 2013);
+  const yahoo = (fys: number[], f: (fy: number) => Partial<PeriodRow>): PeriodRow[] => fys.map((fy) => ({ fy, date: `${fy}-12-31`, sources: ["yahoo"], ...f(fy) }));
+
+  it("adds up to 10 older years for figures that join Yahoo's, and never a newer year", () => {
+    const rows = secAnnual(
+      facts({
+        SalesRevenueNet: { USD: range(2013, 2017).map((fy) => year(fy, revenue(fy))) },
+        RevenueFromContractWithCustomerExcludingAssessedTax: { USD: range(2016, 2026).map((fy) => year(fy, revenue(fy))) },
+        OperatingIncomeLoss: { USD: range(2013, 2025).map((fy) => year(fy, 0.2 * revenue(fy))) },
+      }),
+      // Yahoo's operating income is adjusted, 5% above the GAAP figure.
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), operatingIncome: 0.21 * revenue(fy) })),
+      "USD",
+    );
+    expect(rows.map((r) => r.fy)).toEqual(range(2015, 2025));
+    expect(rows[0]).toEqual({ fy: 2015, date: "2015-12-31", sources: ["sec"], revenue: revenue(2015) });
+    expect(rows.some((r) => r.operatingIncome !== undefined)).toBe(false);
+  });
+
+  it("leaves out years before a spin-off restated the revenue of the remaining business", () => {
+    const remaining = (fy: number) => revenue(fy) / 2;
+    const rows = secAnnual(
+      facts({
+        // Each report as first filed, then the FY2024 report restating FY2022 to FY2024 without the spun-off half.
+        Revenues: { USD: [...range(2013, 2023).map((fy) => year(fy, revenue(fy))), ...range(2022, 2025).map((fy) => year(fy, remaining(fy), "A2024"))] },
+        NetIncomeLoss: { USD: range(2013, 2025).map((fy) => year(fy, revenue(fy) / 10)) },
+      }),
+      yahoo(range(2023, 2025), (fy) => ({ revenue: remaining(fy), netIncome: revenue(fy) / 10 })),
+      "USD",
+    );
+    expect(rows.map((r) => r.fy)).toEqual(range(2022, 2025));
+    expect(rows[0]!.revenue).toBe(remaining(2022));
+  });
+
+  it("leaves out share counts and EPS for years that started before the listing, but keeps the business figures", () => {
+    const rows = secAnnual(
+      facts({
+        Revenues: { USD: range(2016, 2025).map((fy) => year(fy, revenue(fy))) },
+        // Before the IPO, the weighted count leaves out preferred stock that converts at the IPO.
+        WeightedAverageNumberOfDilutedSharesOutstanding: { shares: range(2016, 2025).map((fy) => year(fy, fy < 2020 ? 50e6 : 100e6, "A2025")) },
+      }),
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), dilutedShares: 100e6 })),
+      "USD",
+      "2019-05-10",
+    );
+    expect(rows.filter((r) => r.dilutedShares !== undefined).map((r) => r.fy)).toEqual(range(2020, 2025));
+    expect(rows.find((r) => r.fy === 2018)?.revenue).toBe(revenue(2018));
+  });
+
+  it("restates share counts and EPS across a split, and leaves out figures in the wrong scale", () => {
+    // A 4-for-1 split in 2023: the FY2023 report restates FY2021 and FY2022. The FY2020 report tagged shares in thousands.
+    const filings: [accn: string, fys: number[], basis: number][] = [
+      ["A2020", [2018, 2019, 2020], 1e-3], ["A2022", [2020, 2021, 2022], 1], ["A2023", [2021, 2022, 2023], 4], ["A2024", [2022, 2023, 2024], 4], ["A2025", [2023, 2024, 2025], 4],
+    ];
+    const tag = (f: (fy: number, basis: number) => number) => filings.flatMap(([accn, fys, basis]) => fys.map((fy) => year(fy, f(fy, basis), accn)));
+    const preSplitEps = (fy: number) => fy - 2016;
+    const income = (fy: number) => preSplitEps(fy) * 100e6;
+    const eps = tag((fy, basis) => (basis === 1 ? preSplitEps(fy) : preSplitEps(fy) / 4));
+    eps.find((f) => f.accn === "A2023" && f.end === "2021-12-31")!.val *= 1000;
+    const rows = secAnnual(
+      facts({
+        Revenues: { USD: range(2016, 2025).map((fy) => year(fy, revenue(fy))) },
+        NetIncomeLoss: { USD: range(2016, 2025).map((fy) => year(fy, income(fy))) },
+        WeightedAverageNumberOfDilutedSharesOutstanding: { shares: tag((_, basis) => (basis === 1e-3 ? 100e3 : basis * 100e6)) },
+        EarningsPerShareDiluted: { "USD/shares": eps },
+      }),
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), netIncome: income(fy), dilutedShares: 400e6, eps: preSplitEps(fy) / 4 })),
+      "USD",
+    );
+    const at = (fy: number) => rows.find((r) => r.fy === fy)!;
+    expect([at(2020).dilutedShares, at(2020).eps]).toEqual([400e6, 1]);
+    // EPS tagged 1000× too high no longer fits net income over shares, so both are left out.
+    expect([at(2021).dilutedShares, at(2021).eps]).toEqual([undefined, undefined]);
+    expect([at(2019).dilutedShares, at(2019).eps, at(2019).netIncome]).toEqual([undefined, undefined, income(2019)]);
   });
 });

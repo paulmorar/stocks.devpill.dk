@@ -6,7 +6,7 @@
  * (`profile.tradingCurrency`); the scoring metrics convert between the two.
  */
 
-export type Source = "yahoo" | "fmp" | "demo";
+export type Source = "yahoo" | "fmp" | "sec" | "demo";
 
 /** One fiscal year (or the trailing twelve months) of statement data. */
 export interface PeriodRow {
@@ -69,6 +69,8 @@ export interface CompanyProfile {
   /** Currency of the share price as quoted, which can be a minor unit (GBp = pence). Same as `currency` when absent. */
   tradingCurrency?: string;
   exchange?: string;
+  /** First trading day of the listing (ISO date), when the provider says. */
+  listedSince?: string;
   quoteType?: string; // EQUITY, ETF, ...
   sector?: string;
   industry?: string;

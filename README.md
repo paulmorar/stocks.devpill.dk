@@ -58,7 +58,7 @@ Sign-in only asks GitHub for the account's email addresses (`user:email` scope).
 ## Deploy to Vercel
 
 1. Push the repo and import it in Vercel (framework auto-detected as Next.js; Node 24.x, pinned in `package.json`).
-2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY`, `SEC_USER_AGENT` (see SEC filings below) and a list database (see Saved lists below).
+2. Set the login env vars (see Login above) and, optionally, `FMP_API_KEY`, `SEC_USER_AGENT` (see SEC EDGAR below) and a list database (see Saved lists below).
 3. Deploy.
 
 The `allowScripts` entry in `package.json` approves only the pinned esbuild version's
@@ -89,11 +89,11 @@ Scoring ~515 companies takes too long for a page load or a Vercel function, so i
 3. `npm run scan` scores everything and writes `src/data/snapshots/<date>.json` + `latest.json` (26 weeks kept). Deltas are computed against the previous file, so ▲▼ are real week-over-week changes.
 4. The workflow commits the snapshot; the commit triggers a Vercel deploy that serves it via `/api/radar`.
 
-Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` as a repo secret if you use FMP. A full weekly scan is ~1,500 FMP calls, above the free plan's 250/day, so FMP falls back to Yahoo-only for the rest unless you're on a paid plan. Add `SEC_USER_AGENT` as a repo secret too if you want CIKs for the Nasdaq-100 companies outside the S&P 500 (see SEC filings below).
+Before the first run, the Radar tabs show how to trigger it. Add `FMP_API_KEY` as a repo secret if you use FMP. A full weekly scan is ~1,500 FMP calls, above the free plan's 250/day, so FMP falls back to Yahoo-only for the rest unless you're on a paid plan. Add `SEC_USER_AGENT` as a repo secret too: the scan then scores US companies on up to 10 years of SEC EDGAR figures instead of Yahoo's ~4, and the universe update adds CIKs for the Nasdaq-100 companies outside the S&P 500 (see SEC EDGAR below).
 
 Locally: `npm run scan -- --limit 30` for a quick test, `npm run scan -- --symbols NVDA,ASML` to rescore a few names inside today's snapshot.
 
-The scan log ends with how many companies came back without trailing-12-month figures. Nearly every company has them, so a large number means Yahoo or `yahoo-finance2` changed and scores are falling back to annual reports.
+The scan log ends with how many companies came back without trailing-12-month figures. Nearly every company has them, so a large number means Yahoo or `yahoo-finance2` changed and scores are falling back to annual reports. The next line counts companies without older years from SEC EDGAR: all of them when `SEC_USER_AGENT` isn't set, otherwise the members without a CIK or without US-GAAP figures (foreign filers such as Novo Nordisk report under IFRS), plus companies whose older years were cut (see SEC EDGAR below) and any SEC failures.
 
 ## Calibrating against TTT
 
@@ -111,11 +111,11 @@ The report shows the gap for each stock and each pillar, the overall bias and me
 | Source | Used for | Notes |
 |---|---|---|
 | **Yahoo Finance** via [`yahoo-finance2`](https://github.com/gadicc/yahoo-finance2) v4 | prices (6.5 y daily, 5-min intraday), quote, analyst estimates, profile, statements (`fundamentalsTimeSeries`), daily exchange rates, screeners, search, news headlines | Server-side only, same pattern as `how-is-my-stock-doing`'s netlify-lambda proxy. Unofficial API: shapes can change. Usually ~4–5 fiscal years of statements. |
+| **SEC EDGAR** (optional) | up to 10 years of annual figures for US companies in the S&P 500 and Nasdaq-100 (company facts); links to the latest annual and quarterly filings on stock pages | Free, no key. Set `SEC_USER_AGENT` (see below). |
 | **Financial Modeling Prep** (optional) | longer statement history for the 10-year checks; fills gaps | Set `FMP_API_KEY`. Free plans may cap history at 5 years; the adapter retries with `limit=5`. |
-| **SEC EDGAR** (optional) | links to the latest annual and quarterly filings on stock pages | Never used for scores. Set `SEC_USER_AGENT` (see below). |
 | **TradingView** (on request) | interactive chart on stock pages | Never used for scores. Loads only when you click (see below). |
 
-Merging: rows are keyed by period-end year; Yahoo wins field-by-field and FMP fills gaps and adds older years. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
+Merging: rows are keyed by period-end year; Yahoo wins field-by-field, SEC EDGAR fills gaps and adds older years, and FMP fills what is left. Each row records which source(s) contributed (shown in the financial history table). Stock splits are detected per provider and history restated so a 10-for-1 split doesn't look like 900% dilution.
 
 The trailing-12-month (TTM) figures come from the same Yahoo endpoint as the annual reports. `yahoo-finance2` 4.0.x rejects the `periodType: "TTM"` that Yahoo now sends, so the app reads statement rows without the library's schema check and checks each value itself. When Yahoo has no TTM figures for a company, its stock page says the score uses annual reports only. Yahoo's TTM row sometimes lacks a single figure that the annual report has, most often interest expense. Checks that need that figure then use the last annual report, and take both sides of a ratio such as interest coverage from that report.
 
@@ -129,11 +129,17 @@ Checks that compare the price or market cap with reported figures convert the pr
 
 Known limit: Yahoo gives US-listed ADRs their EPS per ADR but their share count in ordinary shares, so the price-to-tangible-book history of a foreign bank ADR (for example HSBC or LYG) is off by the ADR ratio. Banks listed on their home exchange are not affected.
 
-### SEC filings
+### SEC EDGAR
 
 Stock pages link to the company's filings on EDGAR. The weekly universe update stores each company's SEC number (CIK) in `src/data/universe.json`: from SEC's ticker list when `SEC_USER_AGENT` is set, otherwise from the S&P 500 dataset, so the Nasdaq-100 companies outside the S&P 500 only get one with the SEC list. Without a CIK, the links search EDGAR by ticker. Non-US listings get no links.
 
 To show the latest annual report (10-K, 20-F or 40-F) and quarterly report (10-Q) with their filing dates, set `SEC_USER_AGENT` in Vercel and as a GitHub Actions secret. SEC rejects automated requests that don't name a contact, so use the app name and an email address, such as `Stock Scout you@example.com`. Without it, the app sends no requests to the SEC. Amendments (10-K/A, 10-Q/A) are listed separately from the original report. Lookups are cached for 12 hours, spaced out, and paused for 10 minutes after a failure. The links open in your browser either way.
+
+The same setting gives the score up to 10 years of history. For each US company in the S&P 500 and Nasdaq-100, the app downloads SEC's company facts (every figure tagged in its filings: a median of 270 KB compressed, 4 MB unpacked) and keeps annual figures from 10-K reports. Yahoo stays the source for the years it covers. SEC fills its gaps and adds older years back to 10 years before Yahoo's newest report, never a newer year.
+
+Each figure is used only if one of its SEC concepts matches Yahoo within 2% in the oldest year both have, so the two series join without a jump. Revenue, net income, cash flow and equity join for about 90% of the 503 companies. Operating income joins for about 200, because Yahoo's figure often leaves out one-off items. Share counts and EPS are restated across stock splits from the counts each 10-K repeats for earlier years. EPS figures that don't fit net income over diluted shares are left out, and so are share counts and EPS for years that started before the listing: before an IPO, the weighted count leaves out preferred stock that converts at the IPO.
+
+After a spin-off or sale, a 10-K restates the years it shows as continuing operations, while older years stay as first reported. When a later report changed a year's revenue by more than 10%, the years before that report's first year are left out. That cut applies to 79 of the 503 companies, such as GE, 3M, J&J and IBM. ROIC durability counts a year only when its cash and debt are known (debt-free companies excepted). Companies that file under IFRS, such as Novo Nordisk, and companies outside the two indexes keep Yahoo's history. Foreign filers that report under US GAAP, such as ASML, are covered once the universe update has stored their CIK. The weekly scan log counts the companies that got no SEC history.
 
 ### News
 
@@ -147,7 +153,7 @@ TradingView only allows embedded charts for US listings and for Copenhagen, Stoc
 
 ### Scoring with Yahoo-only history
 
-You can rank stocks with four or more annual reports without an FMP key.
+You can rank stocks with four or more annual reports without `SEC_USER_AGENT` or an FMP key.
 When we have only four reports, stock pages, cards, and ranking tables show a
 Limited history badge. These scores are provisional: they are early estimates based
 on a shorter record. We do not score funds, ETFs, REITs, or companies with fewer than
@@ -183,7 +189,7 @@ Interpretation choices worth knowing:
 ## Layout
 
 ```
-src/lib/data/        yahoo.ts, yahoo-map.ts, fmp.ts, merge.ts, splits.ts, demo.ts, cache.ts, sec.ts + sec-map.ts (EDGAR), news.ts + news-map.ts (headlines), index.ts (facade)
+src/lib/data/        yahoo.ts, yahoo-map.ts, fmp.ts, merge.ts, splits.ts, demo.ts, cache.ts, sec.ts + sec-map.ts + sec-facts.ts (EDGAR), news.ts + news-map.ts (headlines), index.ts (facade)
 src/lib/lists/       model.ts (list rules shared by browser and server), store.ts (Upstash REST, compare-and-set), service.ts (load, save with retries)
 src/lib/scoring/     engine.ts (pillars, re-weighting, flags, caps), checks-main.ts, checks-financials.ts, metrics.ts, summary.ts
 src/lib/trend.ts     200-DMA states, RS, Ind, score × trend quadrants
