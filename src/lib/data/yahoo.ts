@@ -79,6 +79,7 @@ export async function yahooCompany(symbol: string): Promise<Omit<CompanyData, "f
       currency: fin.financialCurrency ?? price.currency ?? "USD",
       tradingCurrency: price.currency ?? fin.financialCurrency ?? "USD",
       exchange: price.exchangeName,
+      listedSince: chart.status === "fulfilled" && chart.value.meta.firstTradeDate ? isoDate(chart.value.meta.firstTradeDate) : undefined,
       quoteType: s.quoteType?.quoteType ?? price.quoteType,
       sector: prof.sector,
       industry: prof.industry,

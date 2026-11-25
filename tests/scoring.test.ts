@@ -259,6 +259,18 @@ describe("trailing-12-month rows with gaps", () => {
   });
 });
 
+describe("ROIC durability", () => {
+  it("leaves out a year without its cash, or without its debt at a company that borrows", () => {
+    const c = demo("NWSW");
+    const durability = () => scoreCompany(c).pillars.flatMap((p) => p.checks).find((ch) => ch.id === "roic_durability")!.display;
+    c.annual[0]!.totalDebt = undefined;
+    c.annual[1]!.cash = undefined;
+    expect(durability()).toBe("8/8 yrs ≥15%");
+    for (const r of c.annual) r.totalDebt = undefined;
+    expect(durability()).toBe("9/9 yrs ≥15%");
+  });
+});
+
 describe("trend states (200-day average)", () => {
   const line = (n: number, f: (i: number) => number) =>
     Array.from({ length: n }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1) + i * 86400000).toISOString().slice(0, 10), close: f(i) }));

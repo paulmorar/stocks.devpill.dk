@@ -40,6 +40,8 @@ jobs:
         run: npm run scan -- ${{ github.event.inputs.symbols && format('--symbols {0}', github.event.inputs.symbols) || '' }}
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          # Optional. Up to 10 years of annual figures from SEC EDGAR instead of Yahoo's ~4.
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
       - name: Commit snapshot
         run: |
           git config user.name "stock-scout-bot"

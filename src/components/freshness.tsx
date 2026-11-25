@@ -7,7 +7,7 @@ import { newerTtm } from "@/lib/scoring/metrics";
 import type { MarketSnapshot, Source } from "@/lib/types";
 import { fx } from "@/lib/util";
 
-const SOURCE_NAME: Record<Source, string> = { yahoo: "Yahoo Finance", fmp: "Financial Modeling Prep", demo: "demo data" };
+const SOURCE_NAME: Record<Source, string> = { yahoo: "Yahoo Finance", fmp: "Financial Modeling Prep", sec: "SEC EDGAR", demo: "demo data" };
 
 /** Inline label for the time a price was set. Never substitutes the viewing time for a missing quote time. */
 export function QuoteTime({ market, now = Date.now() }: { market: MarketSnapshot; now?: number }) {
