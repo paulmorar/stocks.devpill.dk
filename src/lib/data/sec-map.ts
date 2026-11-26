@@ -61,6 +61,20 @@ export function cikFor(members: readonly { symbol: string; cik?: string }[], sym
   return members.find((m) => normalizeSymbol(m.symbol) === s)?.cik;
 }
 
+/** SEC's ticker list (www.sec.gov/files/company_tickers.json) as Yahoo-style symbol to CIK. */
+export function parseTickerList(body: Record<string, { cik_str: number | string; ticker: string }>): Map<string, string> {
+  return new Map(Object.values(body).map((e) => [normalizeSymbol(e.ticker), padCik(e.cik_str)]));
+}
+
+/**
+ * Earlier registrants that filed a company's older annual reports, by current CIK. A reorganization under a new
+ * holding company starts a new CIK, which has no 10-K until a year later; its facts are merged with these.
+ */
+export const PREDECESSOR_CIKS: Readonly<Record<string, readonly string[]>> = {
+  // ExxonMobil Holdings Corporation (2026). Exxon Mobil Corporation filed the 10-Ks through FY2025.
+  "0002115436": ["0000034088"],
+};
+
 /** SEC_USER_AGENT must name the app and a contact email, e.g. "Stock Scout you@example.com". */
 export function secUserAgent(env: Record<string, string | undefined> = process.env): string | undefined {
   const ua = env.SEC_USER_AGENT?.trim();

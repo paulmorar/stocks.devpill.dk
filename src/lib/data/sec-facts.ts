@@ -11,7 +11,10 @@ import { isNum } from "../util";
  * - A field is used only when one of its concepts agrees with Yahoo (within 2%) in the oldest year both have, so the
  *   series joins Yahoo's without a jump. The matching concept is chosen per company: Yahoo's operating income is often
  *   adjusted, and its total debt includes operating leases for some companies only. Older years switch to another
- *   concept only where the two agree on a shared year.
+ *   concept only where the two agree on a shared year. Operating income needs a match in at least 3 of 4 shared years
+ *   instead, because Yahoo leaves out one-off items in some years only; its candidates add those items back.
+ * - Foreign filers that report under IFRS use the IFRS taxonomy's concepts, joined to Yahoo the same way. Yahoo gives
+ *   most ADRs their EPS per ADR, so their per-share figures don't join and keep Yahoo's years only.
  * - Every 10-K repeats two earlier years' share counts, restated for any split since. The ratio between two filings'
  *   counts for the same year converts older filings to the newest one's share basis. Per-share figures from a filing
  *   that can't be linked this way are left out, and so are EPS figures that don't fit net income over diluted shares.
@@ -37,16 +40,27 @@ export interface CompanyFacts {
 }
 
 type NumField = Exclude<{ [K in keyof PeriodRow]-?: PeriodRow[K] extends number | undefined ? K : never }[keyof PeriodRow], "fy">;
-/** Summed concepts. The first part must be present; later parts count as 0 when missing. Within a part, the first concept present wins. */
-type Candidate = { any: string[]; minus?: true }[];
+/**
+ * Summed concepts. The first part must be present; later parts count as 0 when missing, unless `required`. Within a
+ * part, the first concept present wins.
+ */
+type Candidate = { any: string[]; minus?: true; required?: true }[];
 interface Spec {
   field: NumField;
   kind: "money" | "perShare" | "shares";
   instant?: true;
   abs?: true;
+  /**
+   * "most": a candidate joins only when it matches Yahoo in at least 3 of 4 shared years, and the one that matches in
+   * the most years wins. Otherwise the first candidate that matches in the oldest shared year wins.
+   */
+  match?: "most";
   candidates: Candidate[];
 }
 
+/** Concepts are US-GAAP unless prefixed with the IFRS taxonomy (foreign filers that report under IFRS). */
+const IFRS = "ifrs-full:";
+const ifrs = (...concepts: string[]) => concepts.map((k) => IFRS + k);
 const one = (...concepts: string[]): Candidate[] => concepts.map((k) => [{ any: [k] }]);
 const DEBT_CORES: Candidate[] = [
   [{ any: ["LongTermDebt"] }],
@@ -60,39 +74,95 @@ const OP_LEASE: Candidate = [{ any: ["OperatingLeaseLiability"] }];
 const DEBT = DEBT_CORES.flatMap((core) =>
   [[...SHORT, ...FIN_LEASE], SHORT, FIN_LEASE, [], [...SHORT, ...FIN_LEASE, ...OP_LEASE], [...SHORT, ...OP_LEASE], [...FIN_LEASE, ...OP_LEASE], OP_LEASE].map((extra) => [...core, ...extra]),
 );
+const IFRS_LEASES: Candidate = [{ any: ifrs("NoncurrentLeaseLiabilities") }, { any: ifrs("CurrentLeaseLiabilities") }];
+const IFRS_BORROWINGS: Candidate = [
+  { any: ifrs("NoncurrentPortionOfNoncurrentBorrowings", "LongtermBorrowings") },
+  { any: ifrs("CurrentBorrowingsAndCurrentPortionOfNoncurrentBorrowings", "ShorttermBorrowings") },
+];
+const IFRS_DEBT: Candidate[] = [
+  [{ any: ifrs("Borrowings") }, ...IFRS_LEASES],
+  [...IFRS_BORROWINGS, ...IFRS_LEASES],
+  [{ any: ifrs("Borrowings") }],
+  [...IFRS_BORROWINGS],
+  [{ any: ifrs("LiabilitiesArisingFromFinancingActivities") }],
+];
 const INTANGIBLES = ["IntangibleAssetsNetExcludingGoodwill", "FiniteLivedIntangibleAssetsNet"];
+const REVENUE = ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet",
+  "RevenuesNetOfInterestExpense", "RegulatedAndUnregulatedOperatingRevenue", "SalesRevenueGoodsNet", "SalesRevenueServicesNet", "ElectricUtilityRevenue"];
+const RESTRUCTURING = ["RestructuringCharges", "RestructuringCosts", "RestructuringSettlementAndImpairmentProvisions"];
+/**
+ * Yahoo's operating income often leaves out one-off items that GAAP operating income includes, in some years or in
+ * all of them, so the candidates add those items back or rebuild the figure from its usual parts.
+ */
+const OPERATING_INCOME: Candidate[] = [
+  [{ any: ["OperatingIncomeLoss"] }],
+  [{ any: ["OperatingIncomeLoss"] }, { any: RESTRUCTURING }],
+  [{ any: ["OperatingIncomeLoss"] }, { any: RESTRUCTURING }, { any: ["GoodwillImpairmentLoss"] }, { any: ["AssetImpairmentCharges", "ImpairmentOfIntangibleAssetsExcludingGoodwill"] }],
+  [{ any: ["OperatingIncomeLoss"] }, { any: ["ResearchAndDevelopmentInProcess", "ResearchAndDevelopmentAssetAcquiredOtherThanThroughBusinessCombinationWrittenOff"] }],
+  [{ any: REVENUE }, { any: ["CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold"], minus: true, required: true },
+    { any: ["SellingGeneralAndAdministrativeExpense"], minus: true, required: true }, { any: ["ResearchAndDevelopmentExpense"], minus: true }],
+  [{ any: REVENUE }, { any: ["CostsAndExpenses"], minus: true, required: true }],
+  ...one(...ifrs("ProfitLossFromOperatingActivities")),
+];
 
 const SPECS: Spec[] = [
-  {
-    field: "revenue", kind: "money",
-    candidates: one("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet",
-      "RevenuesNetOfInterestExpense", "RegulatedAndUnregulatedOperatingRevenue", "SalesRevenueGoodsNet", "SalesRevenueServicesNet", "ElectricUtilityRevenue"),
-  },
-  { field: "operatingIncome", kind: "money", candidates: one("OperatingIncomeLoss") },
+  { field: "revenue", kind: "money", candidates: one(...REVENUE, ...ifrs("Revenue", "RevenueFromContractsWithCustomers")) },
+  { field: "operatingIncome", kind: "money", match: "most", candidates: OPERATING_INCOME },
   {
     field: "pretaxIncome", kind: "money",
     candidates: one("IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
-      "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"),
+      "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments", ...ifrs("ProfitLossBeforeTax")),
   },
-  { field: "taxProvision", kind: "money", candidates: one("IncomeTaxExpenseBenefit") },
-  { field: "netIncome", kind: "money", candidates: one("NetIncomeLossAvailableToCommonStockholdersBasic", "NetIncomeLoss", "ProfitLoss") },
-  { field: "eps", kind: "perShare", candidates: one("EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted") },
-  { field: "dilutedShares", kind: "shares", candidates: one("WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted") },
+  { field: "taxProvision", kind: "money", candidates: one("IncomeTaxExpenseBenefit", ...ifrs("IncomeTaxExpenseContinuingOperations")) },
+  {
+    field: "netIncome", kind: "money",
+    candidates: one("NetIncomeLossAvailableToCommonStockholdersBasic", "NetIncomeLoss", "ProfitLoss",
+      ...ifrs("ProfitLossAttributableToOwnersOfParent", "ProfitLossAttributableToOrdinaryEquityHoldersOfParentEntity", "ProfitLoss")),
+  },
+  { field: "eps", kind: "perShare", candidates: one("EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted", ...ifrs("DilutedEarningsLossPerShare", "BasicAndDilutedEarningsLossPerShare")) },
+  {
+    field: "dilutedShares", kind: "shares",
+    candidates: one("WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted", ...ifrs("AdjustedWeightedAverageShares")),
+  },
   {
     field: "interestExpense", kind: "money", abs: true,
-    candidates: one("InterestExpense", "InterestExpenseNonoperating", "InterestExpenseOperating", "InterestAndDebtExpense", "InterestExpenseDebt"),
+    candidates: one("InterestExpense", "InterestExpenseNonoperating", "InterestExpenseOperating", "InterestAndDebtExpense", "InterestExpenseDebt",
+      ...ifrs("InterestExpense", "FinanceCosts", "InterestExpenseOnBorrowings")),
   },
   {
     field: "da", kind: "money", abs: true,
-    candidates: one("DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet", "Depreciation"),
+    candidates: one("DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet", "Depreciation",
+      ...ifrs("AdjustmentsForDepreciationAndAmortisationExpense", "DepreciationAndAmortisationExpense",
+        "AdjustmentsForDepreciationAndAmortisationExpenseAndImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss",
+        "DepreciationAmortisationAndImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss")),
   },
-  { field: "operatingCashFlow", kind: "money", candidates: one("NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations") },
-  { field: "capex", kind: "money", abs: true, candidates: one("PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "PaymentsForCapitalImprovements") },
-  { field: "buybacks", kind: "money", abs: true, candidates: one("PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity") },
-  { field: "dividendsPaid", kind: "money", abs: true, candidates: one("PaymentsOfDividends", "PaymentsOfDividendsCommonStock", "PaymentsOfOrdinaryDividends") },
-  { field: "equity", kind: "money", instant: true, candidates: one("StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest") },
-  { field: "totalAssets", kind: "money", instant: true, candidates: one("Assets") },
-  { field: "totalDebt", kind: "money", instant: true, candidates: DEBT },
+  {
+    field: "operatingCashFlow", kind: "money",
+    candidates: one("NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+      ...ifrs("CashFlowsFromUsedInOperatingActivities", "CashFlowsFromUsedInOperatingActivitiesContinuingOperations")),
+  },
+  {
+    field: "capex", kind: "money", abs: true,
+    candidates: [
+      ...one("PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "PaymentsForCapitalImprovements"),
+      // Yahoo counts purchases of intangible assets (such as software) as capital spending at IFRS filers.
+      [{ any: ifrs("PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities", "PurchaseOfPropertyPlantAndEquipment") },
+        { any: ifrs("PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities", "PurchaseOfIntangibleAssets") }],
+      ...one(...ifrs("PurchaseOfPropertyPlantAndEquipmentIntangibleAssetsOtherThanGoodwillInvestmentPropertyAndOtherNoncurrentAssets")),
+    ],
+  },
+  { field: "buybacks", kind: "money", abs: true, candidates: one("PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity", ...ifrs("PaymentsToAcquireOrRedeemEntitysShares", "PurchaseOfTreasuryShares")) },
+  {
+    field: "dividendsPaid", kind: "money", abs: true,
+    candidates: one("PaymentsOfDividends", "PaymentsOfDividendsCommonStock", "PaymentsOfOrdinaryDividends",
+      ...ifrs("DividendsPaidToEquityHoldersOfParentClassifiedAsFinancingActivities", "DividendsPaidClassifiedAsFinancingActivities", "DividendsPaidOrdinaryShares", "DividendsPaid")),
+  },
+  {
+    field: "equity", kind: "money", instant: true,
+    candidates: one("StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", ...ifrs("EquityAttributableToOwnersOfParent", "Equity")),
+  },
+  { field: "totalAssets", kind: "money", instant: true, candidates: one("Assets", ...ifrs("Assets")) },
+  { field: "totalDebt", kind: "money", instant: true, candidates: [...DEBT, ...IFRS_DEBT] },
   {
     field: "cash", kind: "money", instant: true,
     candidates: [
@@ -100,6 +170,9 @@ const SPECS: Spec[] = [
       [{ any: ["CashAndCashEquivalentsAtCarryingValue"] }, { any: ["ShortTermInvestments", "MarketableSecuritiesCurrent", "AvailableForSaleSecuritiesDebtSecuritiesCurrent"] }],
       [{ any: ["CashAndCashEquivalentsAtCarryingValue"] }],
       [{ any: ["CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"] }],
+      ...["OtherCurrentFinancialAssets", "ShorttermDepositsNotClassifiedAsCashEquivalents", "CurrentFinancialAssetsAtFairValueThroughProfitOrLoss", "CurrentInvestments"]
+        .map((k): Candidate => [{ any: ifrs("CashAndCashEquivalents") }, { any: ifrs(k) }]),
+      ...one(...ifrs("CashAndCashEquivalents")),
     ],
   },
   {
@@ -108,9 +181,11 @@ const SPECS: Spec[] = [
       [{ any: ["StockholdersEquity"] }, { any: ["Goodwill"], minus: true }, { any: INTANGIBLES, minus: true }],
       [{ any: ["StockholdersEquity"] }, { any: ["Goodwill"], minus: true }, { any: INTANGIBLES, minus: true }, { any: ["PreferredStockValue"], minus: true }],
       [{ any: ["StockholdersEquity"] }, { any: ["Goodwill"], minus: true }],
+      [{ any: ifrs("EquityAttributableToOwnersOfParent") }, { any: ifrs("Goodwill"), minus: true }, { any: ifrs("IntangibleAssetsOtherThanGoodwill"), minus: true }],
+      [{ any: ifrs("EquityAttributableToOwnersOfParent") }, { any: ifrs("IntangibleAssetsAndGoodwill"), minus: true }],
     ],
   },
-  { field: "sharesOutstanding", kind: "shares", instant: true, candidates: one("CommonStockSharesOutstanding") },
+  { field: "sharesOutstanding", kind: "shares", instant: true, candidates: one("CommonStockSharesOutstanding", ...ifrs("NumberOfSharesOutstanding")) },
 ];
 
 const ANNUAL_FORMS = /^(10-K|10-KT|20-F|40-F)(\/A)?$/;
@@ -131,19 +206,47 @@ const close = (a: number, b: number, abs = 0) => Math.abs(a - b) <= Math.max(TOL
  */
 const SPLIT_MIN = 1.3;
 const SPLIT_MAX = 100;
-const SHARE_CONCEPTS = ["WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted"];
+const SHARE_CONCEPTS = ["WeightedAverageNumberOfDilutedSharesOutstanding", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted", ...ifrs("AdjustedWeightedAverageShares")];
+/** Share of the shared years a "most" candidate must match. */
+const MOST = 0.75;
 
-type Concepts = NonNullable<NonNullable<CompanyFacts["facts"]>[string]>;
+type Facts = NonNullable<CompanyFacts["facts"]>;
+type Units = (concept: string, unit: string) => SecFact[];
+
+function unitsOf(facts: Facts, concept: string, unit: string): SecFact[] {
+  const [taxonomy, name] = concept.startsWith(IFRS) ? ["ifrs-full", concept.slice(IFRS.length)] : ["us-gaap", concept];
+  return facts[taxonomy]?.[name]?.units?.[unit] ?? [];
+}
+
+/**
+ * Facts of several registrants as one company, such as a new holding company and the predecessor that filed the
+ * older annual reports. Each period still takes the newest filing's figure.
+ */
+export function mergeFacts(...bodies: (CompanyFacts | undefined)[]): CompanyFacts | undefined {
+  const present = bodies.filter((b): b is CompanyFacts => !!b?.facts);
+  if (present.length < 2) return present[0];
+  const facts: Facts = {};
+  for (const b of present) {
+    for (const [taxonomy, concepts] of Object.entries(b.facts ?? {})) {
+      const into = (facts[taxonomy] ??= {});
+      for (const [name, concept] of Object.entries(concepts ?? {})) {
+        const units = ((into[name] ??= { units: {} }).units ??= {});
+        for (const [unit, list] of Object.entries(concept.units ?? {})) units[unit] = [...(units[unit] ?? []), ...list];
+      }
+    }
+  }
+  return { facts };
+}
 
 export function secAnnual(body: CompanyFacts, yahoo: PeriodRow[], currency: string, listedSince?: string): PeriodRow[] {
-  const gaap = body.facts?.["us-gaap"];
-  if (!gaap || !yahoo.length) return [];
+  const facts = body.facts;
+  if (!facts || !yahoo.length) return [];
   const newest = Math.max(...yahoo.map((r) => r.fy));
-  const units = (concept: string, unit: string) => gaap[concept]?.units?.[unit] ?? [];
+  const units: Units = (concept, unit) => unitsOf(facts, concept, unit);
   const unitOf = (s: Spec) => (s.kind === "money" ? currency : s.kind === "perShare" ? `${currency}/shares` : "shares");
 
-  const ends = fiscalYearEnds(gaap, currency);
-  const since = basisStart(gaap, currency);
+  const ends = fiscalYearEnds(units, currency);
+  const since = basisStart(units, currency);
   // One concept only: some companies tag the other one in thousands, which would look like a split.
   const factors = splitFactors(SHARE_CONCEPTS.map((k) => units(k, "shares")).find((fs) => fs.length) ?? []);
   const rows = new Map<number, PeriodRow>();
@@ -157,7 +260,7 @@ export function secAnnual(body: CompanyFacts, yahoo: PeriodRow[], currency: stri
     };
     const candidates = spec.candidates.map((cand) => candidateSeries(cand, conceptSeries, spec.abs));
     const yahooValues = new Map(yahoo.flatMap((r) => (isNum(r[spec.field]) ? [[r.fy, r[spec.field] as number] as const] : [])));
-    const joined = join(candidates, yahooValues, spec.kind === "perShare" ? CENT_ROUNDING : 0);
+    const joined = join(candidates, yahooValues, spec.kind === "perShare" ? CENT_ROUNDING : 0, spec.match === "most");
     for (const [fy, v] of joined ?? []) {
       if (fy > newest || fy < Math.max(newest - 10, since)) continue;
       const row: PeriodRow = rows.get(fy) ?? { fy, date: ends.get(fy) ?? `${fy}-12-31`, sources: ["sec"] };
@@ -179,12 +282,12 @@ export function secAnnual(body: CompanyFacts, yahoo: PeriodRow[], currency: stri
 }
 
 /** Period end per fiscal year, from annual periods of the mapped flow concepts. A 52/53-week year can end twice in one calendar year; the later end wins. */
-function fiscalYearEnds(gaap: Concepts, currency: string) {
+function fiscalYearEnds(units: Units, currency: string) {
   const ends = new Map<number, string>();
   for (const spec of SPECS) {
     if (spec.instant || spec.kind !== "money") continue;
     for (const cand of spec.candidates) {
-      for (const f of gaap[cand[0]!.any[0]!]?.units?.[currency] ?? []) {
+      for (const f of units(cand[0]!.any[0]!, currency)) {
         if (!ANNUAL_FORMS.test(f.form) || !spansYear(f)) continue;
         const fy = yearOf(f.end);
         if (f.end > (ends.get(fy) ?? "")) ends.set(fy, f.end);
@@ -198,9 +301,9 @@ function fiscalYearEnds(gaap: Concepts, currency: string) {
  * The oldest year on the current basis, or 0. After a spin-off or sale, the first report that changes an earlier
  * year's revenue by more than 10% restates every year it shows, so those years and later ones are comparable.
  */
-function basisStart(gaap: Concepts, currency: string) {
+function basisStart(units: Units, currency: string) {
   const revenue = SPECS.find((spec) => spec.field === "revenue") as Spec;
-  const byConcept = revenue.candidates.map((cand) => (gaap[cand[0]!.any[0]!]?.units?.[currency] ?? []).filter((f) => ANNUAL_FORMS.test(f.form) && spansYear(f)));
+  const byConcept = revenue.candidates.map((cand) => units(cand[0]!.any[0]!, currency).filter((f) => ANNUAL_FORMS.test(f.form) && spansYear(f)));
   let restatedOn = "";
   for (const facts of byConcept) {
     const byEnd = new Map<string, SecFact[]>();
@@ -277,7 +380,7 @@ function candidateSeries(cand: Candidate, series: (concept: string) => Map<numbe
   const years = new Set(first.any.flatMap((k) => [...series(k).keys()]));
   for (const fy of years) {
     const base = partAt(first, fy);
-    if (!isNum(base)) continue;
+    if (!isNum(base) || rest.some((part) => part.required && !isNum(partAt(part, fy)))) continue;
     const v = rest.reduce((sum, part) => sum + (part.minus ? -1 : 1) * (partAt(part, fy) ?? 0), base);
     out.set(fy, abs ? Math.abs(v) : v);
   }
@@ -285,20 +388,25 @@ function candidateSeries(cand: Candidate, series: (concept: string) => Map<numbe
 }
 
 /**
- * The first candidate that matches Yahoo in the oldest year both have, then older years: from the same candidate,
- * or from another that agrees with it on the newest year they share. Undefined when nothing matches Yahoo.
+ * The candidate that joins Yahoo, then older years: from the same candidate, or from another that agrees with it on
+ * the newest year they share. Undefined when nothing matches Yahoo. By default the first candidate that matches in the
+ * oldest shared year joins; with `most`, the one that matches in the most shared years, at least 3 of 4 of them.
  */
-function join(candidates: Map<number, number>[], yahoo: Map<number, number>, abs: number) {
+function join(candidates: Map<number, number>[], yahoo: Map<number, number>, abs: number, most = false) {
   const years = [...yahoo.keys()].sort((a, b) => a - b);
   let cur = -1;
   let seam = 0;
+  let best = 0;
   for (const [i, c] of candidates.entries()) {
-    const fy = years.find((y) => c.has(y));
-    if (fy !== undefined && close(c.get(fy) as number, yahoo.get(fy) as number, abs)) {
-      cur = i;
-      seam = fy;
-      break;
-    }
+    const shared = years.filter((y) => c.has(y));
+    if (!shared.length) continue;
+    const matches = (y: number) => close(c.get(y) as number, yahoo.get(y) as number, abs);
+    const hits = most ? shared.filter(matches).length : 0;
+    if (most ? hits <= best || hits < Math.ceil(shared.length * MOST) : !matches(shared[0]!)) continue;
+    cur = i;
+    seam = shared[0]!;
+    best = hits;
+    if (!most) break;
   }
   if (cur < 0) return undefined;
   const out = new Map([...(candidates[cur] as Map<number, number>)].filter(([fy]) => fy >= seam));

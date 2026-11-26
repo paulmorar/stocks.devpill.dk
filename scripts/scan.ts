@@ -51,6 +51,8 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
 }
 
 async function main() {
+  // A transient SEC failure would leave a company on Yahoo's 4 years until next week, so the scan asks up to 3 times.
+  process.env.SEC_FACTS_ATTEMPTS ??= "3";
   const today = new Date().toISOString().slice(0, 10);
   const only = arg("symbols")?.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
   const limit = Number(arg("limit") ?? 0) || undefined;
@@ -71,6 +73,7 @@ async function main() {
   const failed: Snapshot["failed"] = [];
   let withoutTtm = 0;
   let withoutSec = 0;
+  let secFailed = 0;
   const queue = [...targets];
   let done = 0;
   const started = Date.now();
@@ -84,6 +87,7 @@ async function main() {
           rows.push(toRow(rep, m.index));
           if (!rep.ttm) withoutTtm++;
           if (!rep.sources.includes("sec")) withoutSec++;
+          if (rep.warnings.some((w) => w.startsWith("SEC EDGAR unavailable"))) secFailed++;
         } catch (e) {
           failed.push({ symbol: m.symbol, error: String((e as Error)?.message ?? e).slice(0, 200), index: m.index });
         }
@@ -135,8 +139,8 @@ async function main() {
   console.log(`\nDone: ${ranked.length} ranked (${limited.length} limited-history), ${snapshot.rows.length - ranked.length} excluded, ${failed.length} failed, ${radar.length} on the radar (80+).`);
   // Nearly every company has trailing-12-month figures; a high count means Yahoo or the library changed.
   console.log(`${withoutTtm} of ${rows.length} loaded companies had no trailing-12-month figures.`);
-  // Without SEC_USER_AGENT this is every company. With it, a high count means SEC refused or failed; see the stock pages' warnings.
-  console.log(`${withoutSec} of ${rows.length} loaded companies had no older years from SEC EDGAR.`);
+  // Without SEC_USER_AGENT this is every company. With it, the second number counts SEC failures after all attempts.
+  console.log(`${withoutSec} of ${rows.length} loaded companies had no older years from SEC EDGAR; for ${secFailed} of them SEC EDGAR failed (up to ${process.env.SEC_FACTS_ATTEMPTS} attempts each).`);
   for (const [i, r] of radar.entries()) {
     const d = r.delta === null || r.delta === undefined ? "new" : r.delta === 0 ? "–" : `${r.delta > 0 ? "▲" : "▼"}${Math.abs(r.delta)}`;
     console.log(`${String(i + 1).padStart(3)} ${r.symbol.padEnd(6)} ${r.score} ${d.padEnd(4)} V${r.pillars.value} G${r.pillars.growth} Q${r.pillars.quality} H${r.pillars.health} ${r.trend ?? ""}`);
