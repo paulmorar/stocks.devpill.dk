@@ -4,12 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FilingsPanel, FilingsView } from "@/components/filings";
 import { parseCsvLine } from "@/lib/csv";
 import { cikFor, edgarLinks, type FilingsResult, isForeignListing, padCik, parseSubmissions, secUserAgent } from "@/lib/data/sec-map";
-import { type CompanyFacts, type SecFact, secAnnual } from "@/lib/data/sec-facts";
+import { type CompanyFacts, mergeFacts, type SecFact, secAnnual } from "@/lib/data/sec-facts";
 import type { PeriodRow } from "@/lib/types";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/data/universe.json", () => ({
-  default: { members: [{ symbol: "AAPL", name: "Apple", index: ["SP500"], cik: "0000320193" }, { symbol: "ARM", name: "Arm", index: ["NDX"] }] },
+  default: {
+    members: [
+      { symbol: "AAPL", name: "Apple", index: ["SP500"], cik: "0000320193" },
+      { symbol: "ARM", name: "Arm", index: ["NDX"] },
+      { symbol: "XOM", name: "ExxonMobil", index: ["SP500"], cik: "0002115436" },
+    ],
+  },
 }));
 
 /** data.sec.gov/submissions column arrays, newest first, with unrelated forms mixed in. */
@@ -129,11 +135,13 @@ describe("getFilings", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("separates companies without a CIK on file from non-US listings", async () => {
-    vi.stubGlobal("fetch", vi.fn());
+  it("separates companies that SEC's ticker list doesn't know from non-US listings", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ 0: { cik_str: 320193, ticker: "AAPL" } })));
+    vi.stubGlobal("fetch", fetch);
     const { getFilings } = await import("@/lib/data/sec");
     expect(await getFilings("ARM", env)).toMatchObject({ status: "unknown-company", links: { all: expect.stringContaining("CIK=ARM&") } });
     expect(await getFilings("NOVO-B.CO", env)).toEqual({ status: "not-us", symbol: "NOVO-B.CO" });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -247,5 +255,127 @@ describe("SEC company facts", () => {
     // EPS tagged 1000× too high no longer fits net income over shares, so both are left out.
     expect([at(2021).dilutedShares, at(2021).eps]).toEqual([undefined, undefined]);
     expect([at(2019).dilutedShares, at(2019).eps, at(2019).netIncome]).toEqual([undefined, undefined, income(2019)]);
+  });
+
+  it("maps IFRS filers, and leaves out per-share figures where Yahoo's EPS is per ADR", () => {
+    const annual = (f: (fy: number) => number) => range(2016, 2025).map((fy) => ({ ...year(fy, f(fy)), form: "20-F" }));
+    const ifrsFacts = (concepts: Record<string, Record<string, SecFact[]>>): CompanyFacts => ({ facts: { "ifrs-full": facts(concepts).facts?.["us-gaap"] } });
+    const ifrs = ifrsFacts({
+      Revenue: { DKK: annual(revenue) },
+      ProfitLossAttributableToOwnersOfParent: { DKK: annual((fy) => revenue(fy) / 4) },
+      CashFlowsFromUsedInOperatingActivities: { DKK: annual((fy) => revenue(fy) / 3) },
+      PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities: { DKK: annual((fy) => revenue(fy) / 20) },
+      PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities: { DKK: annual((fy) => revenue(fy) / 100) },
+      DilutedEarningsLossPerShare: { "DKK/shares": annual((fy) => revenue(fy) / 4e9) },
+    });
+    // Yahoo counts purchases of intangibles as capex, and gives the ADR's EPS (2 shares per ADR).
+    const rows = secAnnual(ifrs, yahoo(range(2022, 2025), (fy) => ({
+      revenue: revenue(fy), netIncome: revenue(fy) / 4, operatingCashFlow: revenue(fy) / 3, capex: revenue(fy) * 0.06, eps: revenue(fy) / 2e9,
+    })), "DKK");
+    expect(rows.map((r) => r.fy)).toEqual(range(2016, 2025));
+    expect(rows[0]).toMatchObject({ revenue: revenue(2016), netIncome: revenue(2016) / 4 });
+    expect(rows[0]!.capex! / revenue(2016)).toBeCloseTo(0.06);
+    expect(rows[0]!.freeCashFlow! / revenue(2016)).toBeCloseTo(1 / 3 - 0.06);
+    expect(rows.some((r) => r.eps !== undefined)).toBe(false);
+  });
+
+  it("joins operating income only on a definition that matches Yahoo in most years", () => {
+    // Yahoo leaves out restructuring charges, which hit 2023 and 2016; GAAP operating income includes them.
+    const charge = (fy: number) => (fy === 2016 || fy === 2023 ? 0.03 * revenue(fy) : 0);
+    const restructured = secAnnual(
+      facts({
+        Revenues: { USD: range(2013, 2025).map((fy) => year(fy, revenue(fy))) },
+        OperatingIncomeLoss: { USD: range(2013, 2025).map((fy) => year(fy, 0.2 * revenue(fy) - charge(fy))) },
+        RestructuringCharges: { USD: [2016, 2023].map((fy) => year(fy, charge(fy))) },
+      }),
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), operatingIncome: 0.2 * revenue(fy) })),
+      "USD",
+    );
+    expect(restructured.find((r) => r.fy === 2016)?.operatingIncome).toBeCloseTo(0.2 * revenue(2016));
+
+    // Matching in the oldest shared year only isn't enough: Yahoo's figure differs in every later year.
+    const different = secAnnual(
+      facts({
+        Revenues: { USD: range(2013, 2025).map((fy) => year(fy, revenue(fy))) },
+        OperatingIncomeLoss: { USD: range(2013, 2025).map((fy) => year(fy, 0.2 * revenue(fy))) },
+      }),
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), operatingIncome: (fy === 2022 ? 0.2 : 0.24) * revenue(fy) })),
+      "USD",
+    );
+    expect(different.some((r) => r.operatingIncome !== undefined)).toBe(false);
+
+    // Rebuilt from revenue, cost of sales and SG&A: a year without cost of sales gets no figure, not a far too high one.
+    const rebuilt = secAnnual(
+      facts({
+        Revenues: { USD: range(2013, 2025).map((fy) => year(fy, revenue(fy))) },
+        CostOfRevenue: { USD: range(2018, 2025).map((fy) => year(fy, 0.5 * revenue(fy))) },
+        SellingGeneralAndAdministrativeExpense: { USD: range(2013, 2025).map((fy) => year(fy, 0.3 * revenue(fy))) },
+      }),
+      yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy), operatingIncome: 0.2 * revenue(fy) })),
+      "USD",
+    );
+    expect(rebuilt.filter((r) => r.operatingIncome !== undefined).map((r) => r.fy)).toEqual(range(2018, 2025));
+  });
+
+  it("reads a predecessor's annual reports together with a new holding company's facts", () => {
+    const holding = facts({ Revenues: { USD: [{ start: "2026-01-01", end: "2026-06-30", val: 1e9, accn: "Q2026", form: "10-Q", filed: "2026-08-01" }] } });
+    const predecessor = facts({ Revenues: { USD: range(2015, 2025).map((fy) => year(fy, revenue(fy))) } });
+    const rows = secAnnual(mergeFacts(holding, predecessor)!, yahoo(range(2022, 2025), (fy) => ({ revenue: revenue(fy) })), "USD");
+    expect(rows.map((r) => r.fy)).toEqual(range(2015, 2025));
+    expect(mergeFacts(undefined, predecessor)).toBe(predecessor);
+  });
+});
+
+describe("secCompanyFacts", () => {
+  const env = { SEC_USER_AGENT: "Stock Scout ops@example.com" };
+  const json = (body: unknown) => new Response(JSON.stringify(body));
+  const urls = (fetch: ReturnType<typeof vi.fn>) => fetch.mock.calls.map((c) => String(c[0]));
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("finds stocks outside the indexes in SEC's ticker list, which it fetches once", async () => {
+    const fetch = vi.fn(async (url: string) => json(url.endsWith("company_tickers.json") ? { 0: { cik_str: 353278, ticker: "NVO" } } : { facts: {} }));
+    vi.stubGlobal("fetch", fetch);
+    const { getFilings, secCompanyFacts } = await import("@/lib/data/sec");
+    expect(await secCompanyFacts("NVO", {})).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await secCompanyFacts("NVO", env)).toEqual({ facts: {} });
+    expect(await secCompanyFacts("ZZZZ", env)).toBeUndefined();
+    expect(await getFilings("NVO", env)).toMatchObject({ status: "ok", cik: "0000353278" });
+    expect(urls(fetch).filter((u) => u.endsWith("company_tickers.json"))).toHaveLength(1);
+    expect(urls(fetch)).toContain("https://data.sec.gov/api/xbrl/companyfacts/CIK0000353278.json");
+  });
+
+  it("adds the facts of a predecessor registrant", async () => {
+    const fact = (accn: string): SecFact => ({ start: "2025-01-01", end: "2025-12-31", val: 1, accn, form: "10-K", filed: "2026-02-18" });
+    const fetch = vi.fn(async (url: string) => json({ facts: { "us-gaap": { Revenues: { units: { USD: url.includes("CIK0000034088") ? [fact("old")] : [] } } } } }));
+    vi.stubGlobal("fetch", fetch);
+    const { secCompanyFacts } = await import("@/lib/data/sec");
+    const merged = await secCompanyFacts("XOM", env);
+    expect(urls(fetch).sort()).toEqual(["https://data.sec.gov/api/xbrl/companyfacts/CIK0000034088.json", "https://data.sec.gov/api/xbrl/companyfacts/CIK0002115436.json"]);
+    expect(merged?.facts?.["us-gaap"]?.Revenues?.units?.USD).toEqual([fact("old")]);
+  });
+
+  it("asks again after a 5xx only when SEC_FACTS_ATTEMPTS allows it", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const fetch = vi.fn(async () => (++calls === 1 ? new Response("busy", { status: 503 }) : json({ facts: {} })));
+    vi.stubGlobal("fetch", fetch);
+    const { secCompanyFacts } = await import("@/lib/data/sec");
+    const retried = secCompanyFacts("AAPL", { ...env, SEC_FACTS_ATTEMPTS: "3" });
+    await vi.runAllTimersAsync();
+    expect(await retried).toEqual({ facts: {} });
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    vi.resetModules();
+    calls = 0;
+    const { secCompanyFacts: once } = await import("@/lib/data/sec");
+    await expect(once("AAPL", env)).rejects.toThrow("HTTP 503");
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });

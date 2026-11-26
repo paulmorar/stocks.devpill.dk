@@ -52,11 +52,11 @@ export async function getCompany(symbol: string): Promise<CompanyData> {
     if (annual.length < 10 && annual.length === yd.annual.length && s.status === "fulfilled" && !sources.includes("fmp")) {
       const why = !s.value
         ? secUserAgent()
-          ? "There is no SEC company number on file for it (we keep them for the S&P 500 and Nasdaq-100), so SEC EDGAR can't add older years."
+          ? "SEC EDGAR has no filings under this ticker, so it can't add older years."
           : "Set SEC_USER_AGENT to add up to 10 years from SEC EDGAR."
         : secRows.length
           ? "SEC EDGAR has no comparable older years for it, for example after a spin-off or a sale."
-          : "SEC EDGAR has no US-GAAP figures for it that match Yahoo's, so they weren't used.";
+          : "SEC EDGAR has no figures for it that match Yahoo's, so they weren't used.";
       warnings.push(`Only ${annual.length} fiscal years of reports. ${why}`);
     }
     const fx = await exchangeRates(yd.profile, warnings);

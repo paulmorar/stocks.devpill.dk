@@ -23,7 +23,7 @@ const PILLARS = [
   {
     name: "Financial Health", pts: 20,
     simple: "Can the company meet its financial commitments? We check debt, interest payments, new share issues, and whether the business regularly has cash left over.",
-    expert: "Debt/equity (or net debt/EBITDA when buybacks shrink equity) · share-count CAGR · interest coverage · years of positive FCF.",
+    expert: "Net debt/EBITDA (debt/equity when EBITDA isn't positive) · share-count CAGR · interest coverage · years of positive FCF.",
   },
 ];
 

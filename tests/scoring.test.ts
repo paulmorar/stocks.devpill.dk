@@ -114,7 +114,7 @@ describe("scoreCompany on demo companies", () => {
     const checks = result.pillars.flatMap((pillar) => pillar.checks);
     const revenue = checks.find((check) => check.id === "rev_cagr_5")!;
     const cagr = (company.annual.at(-1)!.revenue! / company.annual[0]!.revenue!) ** (1 / 3) - 1;
-    const fullCredit = symbol === "CTSB" ? 0.12 : 0.15;
+    const fullCredit = symbol === "CTSB" ? 0.12 : 0.2;
     expect(revenue.score).toBeCloseTo(Math.min(1, Math.max(0, cagr / fullCredit)));
     expect(revenue.display).toContain("(3y)");
     expect(revenue.explain.expert).toMatch(/over 3 (fiscal )?years/);
@@ -268,6 +268,23 @@ describe("ROIC durability", () => {
     expect(durability()).toBe("8/8 yrs ≥15%");
     for (const r of c.annual) r.totalDebt = undefined;
     expect(durability()).toBe("9/9 yrs ≥15%");
+  });
+});
+
+describe("debt load", () => {
+  it("measures net debt against operating profit plus D&A, not an EBITDA figure hit by a one-off charge", () => {
+    const c = demo("NWSW");
+    c.ttm = undefined;
+    const last = c.annual.at(-1)!;
+    const debtLoad = () => scoreCompany(c).pillars.flatMap((p) => p.checks).find((ch) => ch.id === "debt_load")!;
+    // An impairment cut Yahoo's EBITDA to 50; operating profit plus D&A is 1,000.
+    Object.assign(last, { operatingIncome: 900, da: 100, ebitda: 50, totalDebt: 3000, cash: 500, equity: 6000 });
+    expect(debtLoad()).toMatchObject({ display: "2.5× net debt/EBITDA", score: 0.5 });
+    last.cash = 4000;
+    expect(debtLoad()).toMatchObject({ display: "net cash", score: 1 });
+    // Without positive EBITDA, debt is compared with equity.
+    Object.assign(last, { operatingIncome: -200, cash: 500 });
+    expect(debtLoad().display).toBe("0.50 debt/equity");
   });
 });
 

@@ -102,12 +102,12 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
     // ───────────── GROWTH (25) ─────────────
     {
       id: "rev_cagr_5", pillar: "growth", label: "Revenue growth (up to 5 years)",
-      rule: "0 pts at 0%/yr, full at 15%/yr",
+      rule: "0 pts at 0%/yr, full at 20%/yr",
       run: () => {
         const g = cagrOver(series(m.annual, (r) => r.revenue), 5);
         if (!g || g.span < 3) return skip("Fewer than 3 years between revenue observations");
         return {
-          score: scale(g.g, 0, 0.15),
+          score: scale(g.g, 0, 0.2),
           display: `${signedPct(g.g, 1)}/yr (${g.span}y)`,
           expert: `Revenue compounded at ${signedPct(g.g, 1)} a year over ${g.span} fiscal years.`,
           simple: `Over the last ${g.span} years, ${name}'s sales grew about ${pct(g.g, 0)} a year on average. ${g.g >= 0.1 ? "That's fast." : g.g >= 0.04 ? "That's steady." : "That's slow or shrinking."}`,
@@ -116,12 +116,12 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
     },
     {
       id: "rev_cagr_10", pillar: "growth", label: "Revenue growth, 10 years",
-      rule: "0 pts at 0%/yr, full at 12%/yr",
+      rule: "0 pts at 0%/yr, full at 15%/yr",
       run: () => {
         const g = cagrOver(series(m.annual, (r) => r.revenue), 10);
         if (!g || g.span < 8) return skip("Fewer than 8 years of revenue");
         return {
-          score: scale(g.g, 0, 0.12),
+          score: scale(g.g, 0, 0.15),
           display: `${signedPct(g.g, 1)}/yr`,
           expert: `Long-run revenue CAGR of ${signedPct(g.g, 1)} over ${g.span} years — the through-cycle track record.`,
           simple: `Looking back about ${g.span} years, sales grew ${pct(g.g, 0)} a year. A long record matters because a few good years can be luck.`,
@@ -216,33 +216,39 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
     // ───────────── FINANCIAL HEALTH (20) ─────────────
     {
       id: "debt_load", pillar: "health", label: "Debt load",
-      rule: "Debt/equity: 0 pts at 2.0, full at 0.3. Net debt/EBITDA (if buybacks shrank equity): 0 pts at 4×, full at 1×.",
+      rule: "Net debt (debt minus cash) / EBITDA: 0 pts at 4×, full at 1× or net cash. Debt/equity when EBITDA isn't positive: 0 pts at 2.0, full at 0.3.",
       run: () => {
         if (!bal) return skip("No balance sheet");
         const debt = bal.totalDebt ?? 0;
         const eq = bal.equity;
-        const er = m.latest((r) => isNum(r.ebitda) || (isNum(r.operatingIncome) && isNum(r.da))) ?? lf;
-        const ebitda = er?.ebitda ?? (isNum(er?.operatingIncome) && isNum(er?.da) ? (er?.operatingIncome as number) + (er?.da as number) : undefined);
-        const shares = series(m.annual, (r) => r.dilutedShares);
-        const shrank = shares.length >= 2 && (shares.at(-1)!.v / shares[Math.max(0, shares.length - 6)]!.v) < 0.95;
-        const de = isNum(eq) && eq > 0 ? debt / eq : undefined;
-        const useEbitda = !isNum(de) || (shrank && de > 1.5);
+        // Operating profit plus D&A: Yahoo's EBITDA field includes one-off charges such as impairments, which would make
+        // one bad year look like heavy borrowing. The field is only a fallback.
+        const er = m.latest((r) => isNum(r.operatingIncome) && isNum(r.da)) ?? m.latest((r) => isNum(r.ebitda));
+        const ebitda = isNum(er?.operatingIncome) && isNum(er?.da) ? (er?.operatingIncome as number) + (er?.da as number) : er?.ebitda;
         let out;
-        if (useEbitda) {
-          if (!isNum(ebitda) || ebitda <= 0) return skip("Negative equity and no EBITDA");
+        if (isNum(ebitda) && ebitda > 0) {
           const nd = (debt - (bal.cash ?? 0)) / ebitda;
-          out = {
-            score: scale(nd, 4, 1),
-            display: `${fx(nd, 1)}× net debt/EBITDA`,
-            expert: `Equity is ${isNum(eq) && eq <= 0 ? "negative" : "shrunk by buybacks"}, so debt is measured against earnings: net debt is ${fx(nd, 1)}× EBITDA.`,
-            simple: `${name} owes about ${fx(Math.max(nd, 0), 1)} years' worth of its yearly operating earnings (after counting its cash). Under 2 years is comfortable.`,
-          };
+          out = nd <= 0
+            ? {
+              score: 1,
+              display: "net cash",
+              expert: "Cash exceeds total debt, so net debt is negative.",
+              simple: `${name} has more cash than debt, so it could repay everything it owes today.`,
+            }
+            : {
+              score: scale(nd, 4, 1),
+              display: `${fx(nd, 1)}× net debt/EBITDA`,
+              expert: `Net debt (debt minus cash) is ${fx(nd, 1)}× EBITDA, the operating profit before depreciation and amortization. Under 1× is light borrowing; above 4× is heavy.`,
+              simple: `${name} owes about ${fx(nd, 1)} years' worth of its yearly operating earnings (after counting its cash). Under 2 years is comfortable.`,
+            };
         } else {
+          const de = isNum(eq) && eq > 0 ? debt / eq : undefined;
+          if (!isNum(de)) return skip("No positive EBITDA or equity");
           out = {
-            score: debt <= 0 ? 1 : scale(de as number, 2.0, 0.3),
+            score: debt <= 0 ? 1 : scale(de, 2.0, 0.3),
             display: `${fx(de, 2)} debt/equity`,
-            expert: `Total debt is ${fx(de, 2)}× shareholders' equity.`,
-            simple: `For every $1 the owners have in the business, ${name} has borrowed about $${fx(de, 2)}. ${(de as number) < 0.5 ? "That's light borrowing." : (de as number) < 1.2 ? "That's moderate." : "That's a lot of borrowing."}`,
+            expert: `EBITDA isn't positive, so debt is compared with equity: total debt is ${fx(de, 2)}× shareholders' equity.`,
+            simple: `For every $1 the owners have in the business, ${name} has borrowed about $${fx(de, 2)}. ${de < 0.5 ? "That's light borrowing." : de < 1.2 ? "That's moderate." : "That's a lot of borrowing."}`,
           };
         }
         // CAPEX mode: "borrowing to build still gets capped".
@@ -322,7 +328,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
   function trendCheck(id: string, label: string, noun: string, values: (number | undefined)[], who: string): CheckDef {
     return {
       id, pillar: "growth", label,
-      rule: "Half: share of years it rose. Half: growth rate (0 pts at 0%/yr, full at 15%/yr).",
+      rule: "Half: share of years it rose. Half: growth rate (0 pts at 0%/yr, full at 20%/yr).",
       run: () => {
         const pts = values.map((v, i) => ({ v, fy: flows[i]?.fy ?? 0 })).filter((p): p is { v: number; fy: number } => isNum(p.v)).slice(-11);
         if (pts.length < 4) return skip(`Fewer than 4 years of ${noun}`);
@@ -333,7 +339,7 @@ export function mainChecks(c: CompanyData, m: Metrics): CheckDef[] {
         const last = pts.at(-1) as { v: number; fy: number };
         const span = last.fy - first.fy;
         const g = first.v > 0 && last.v > 0 && span > 0 ? (last.v / first.v) ** (1 / span) - 1 : undefined;
-        const rate = isNum(g) ? scale(g, 0, 0.15) : last.v <= 0 ? 0 : 0.5;
+        const rate = isNum(g) ? scale(g, 0, 0.2) : last.v <= 0 ? 0 : 0.5;
         return {
           score: upFrac * 0.5 + rate * 0.5,
           display: `${ups}/${pts.length - 1} yrs up${isNum(g) ? `, ${signedPct(g, 0)}/yr` : ""}`,

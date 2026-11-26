@@ -52,7 +52,7 @@ export function FilingsView({ result: r }: { result: FilingsResult }) {
     const why =
       r.status === "not-configured" ? "Latest report dates appear here once SEC_USER_AGENT is set." :
       r.status === "unavailable" ? `SEC EDGAR is unavailable right now. ${r.reason}` :
-      `There is no SEC company number on file for ${r.symbol}; we keep them for S&P 500 and Nasdaq-100 companies. These links search EDGAR by ticker.`;
+      `We couldn't find an SEC company number for ${r.symbol}, so these links search EDGAR by ticker.`;
     return (
       <>
         <p className="muted">{why}</p>

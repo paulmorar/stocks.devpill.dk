@@ -9,7 +9,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseCsvLine } from "../src/lib/csv";
-import { normalizeSymbol as yahooSymbol, padCik, secUserAgent } from "../src/lib/data/sec-map";
+import { normalizeSymbol as yahooSymbol, padCik, parseTickerList, secUserAgent } from "../src/lib/data/sec-map";
 
 const FILE = path.join(process.cwd(), "src/data/universe.json");
 type Member = { symbol: string; name: string; index: string[]; cik?: string };
@@ -38,8 +38,7 @@ async function secCiks(): Promise<Map<string, string>> {
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`SEC company tickers ${res.status}`);
-  const body = (await res.json()) as Record<string, { cik_str: number; ticker: string }>;
-  return new Map(Object.values(body).map((e) => [yahooSymbol(e.ticker), padCik(e.cik_str)]));
+  return parseTickerList((await res.json()) as Record<string, { cik_str: number; ticker: string }>);
 }
 
 async function nasdaq100(): Promise<Member[]> {
